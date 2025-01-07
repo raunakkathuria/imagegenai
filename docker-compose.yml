@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   image-generator:
     build: 
@@ -10,14 +8,3 @@ services:
       - "8080:8080"
     volumes:
       - ./output:/app/output
-    # GPU configuration will be applied only if USE_GPU=true
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [compute, utility]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=${USE_GPU:+all}
-      - NVIDIA_DRIVER_CAPABILITIES=${USE_GPU:+compute,utility}
-      - PYTORCH_CUDA_ALLOC_CONF=${USE_GPU:+expandable_segments:True}

@@ -42,48 +42,58 @@ class ImageGenerator:
         self.device = "cuda" if USE_GPU and torch.cuda.is_available() else "cpu"
         logger.info(f"USE_GPU setting: {USE_GPU}")
         logger.info(f"Using device: {self.device}")
-        
+
         if USE_GPU and not torch.cuda.is_available():
             logger.warning("GPU was requested but is not available. Falling back to CPU.")
         elif self.device == "cpu":
             logger.info("Running in CPU mode. This will be slower than GPU acceleration.")
-        
+
         self.load_model()
 
     def load_model(self):
         try:
             logger.info(f"Loading {MODEL_TYPE} model: {MODEL_ID}")
-            
+
             # Determine model type and configuration
             model_class = (
                 StableDiffusionXLPipeline if MODEL_TYPE == "stable-diffusion-xl"
                 else StableDiffusionPipeline
             )
-            
+
             # Configure model dtype based on device
             dtype = torch.float16 if self.device == "cuda" else torch.float32
-            
-            # Load the model
+
+            # Load the model with optimizations
             self.model = model_class.from_pretrained(
                 MODEL_ID,
                 torch_dtype=dtype,
-                safety_checker=None  # Disable safety checker for performance
+                variant="fp16" if self.device == "cuda" else None,
+                use_safetensors=True,  # More secure model loading
+                safety_checker=None,  # Disable safety checker for performance
             )
-            
+
             # Move model to appropriate device
             self.model = self.model.to(self.device)
-            
-            # Apply optimizations
+
+            # Apply optimizations based on available memory and device
             if ENABLE_ATTENTION_SLICING:
                 self.model.enable_attention_slicing()
                 logger.info("Enabled attention slicing")
-                
-            if ENABLE_MEMORY_EFFICIENT_ATTENTION and MODEL_TYPE == "stable-diffusion-xl":
-                self.model.enable_vae_slicing()
-                logger.info("Enabled VAE slicing for SDXL")
-            
+
+            if self.device == "cuda":
+                # Enable additional GPU optimizations
+                self.model.enable_model_cpu_offload()
+                logger.info("Enabled CPU offload for GPU optimization")
+
+            if ENABLE_MEMORY_EFFICIENT_ATTENTION:
+                if MODEL_TYPE == "stable-diffusion-xl":
+                    self.model.enable_vae_slicing()
+                    logger.info("Enabled VAE slicing for SDXL")
+                self.model.enable_sequential_cpu_offload()
+                logger.info("Enabled sequential CPU offload")
+
             logger.info(f"Model loaded successfully on {self.device}")
-            
+
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
             raise
@@ -110,7 +120,7 @@ class ImageGenerator:
             # Create filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
-            
+
             # Save image
             image.save(filename)
             logger.info(f"Image saved successfully: {filename}")

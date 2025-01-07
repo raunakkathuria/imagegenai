@@ -55,8 +55,8 @@ ENABLE_MEMORY_EFFICIENT_ATTENTION=true
 3. Running the Application:
 
 ### CPU Mode (Default)
-Simply run:
 ```bash
+# Set USE_GPU=false in .env file
 docker compose up --build
 ```
 
@@ -82,12 +82,16 @@ sudo systemctl restart docker
 nvidia-smi
 ```
 
-2. Enable GPU mode:
+2. Run with GPU support:
    - Set `USE_GPU=true` in `.env` file
-   - Run the application:
+   - Use the GPU compose override:
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
+
+The application uses Docker Compose override files to manage GPU configuration:
+- `docker-compose.yml`: Base configuration for CPU mode
+- `docker-compose.gpu.yml`: Additional configuration for GPU support
 
 ## API Endpoints
 
@@ -185,3 +189,31 @@ docker compose up --build
    - Reduce image dimensions
    - Use memory efficient attention for SDXL
    - Reduce batch size if implementing batch processing
+
+3. Security and Dependencies:
+   - The project uses the latest stable versions of all dependencies for security
+   - Key security features:
+     * SafeTensors model loading for improved security
+     * Latest ML libraries with security patches
+     * Regular dependency updates recommended
+   - If you encounter any issues:
+     ```bash
+     # Rebuild the container to get latest updates
+     docker compose down
+     docker compose up --build
+     ```
+   - For manual environment setup:
+     ```bash
+     pip install -r requirements.txt
+     ```
+   - Performance optimizations:
+     * Automatic FP16 precision for GPU
+     * Memory-efficient attention mechanisms
+     * CPU offloading for better resource management
+     * VAE slicing for SDXL models
+
+4. Best Practices:
+   - Regularly update dependencies for security patches
+   - Monitor GPU memory usage with nvidia-smi
+   - Use version control for your .env configurations
+   - Keep Docker and NVIDIA drivers up to date
