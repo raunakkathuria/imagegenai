@@ -1,23 +1,16 @@
-x-common-config: &common-config
-  build: 
-    context: .
-    dockerfile: Dockerfile
-  env_file: .env
-  ports:
-    - "8080:8080"
-  volumes:
-    - ./output:/app/output
+version: '3.8'
 
 services:
-  # CPU version (default)
   image-generator:
-    <<: *common-config
-    profiles: ["cpu"]
-
-  # GPU version (use with --profile gpu)
-  image-generator-gpu:
-    <<: *common-config
-    profiles: ["gpu"]
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./output:/app/output
+    # GPU configuration will be applied only if USE_GPU=true
     deploy:
       resources:
         reservations:
@@ -25,6 +18,6 @@ services:
             - driver: nvidia
               capabilities: [compute, utility]
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - NVIDIA_VISIBLE_DEVICES=${USE_GPU:+all}
+      - NVIDIA_DRIVER_CAPABILITIES=${USE_GPU:+compute,utility}
+      - PYTORCH_CUDA_ALLOC_CONF=${USE_GPU:+expandable_segments:True}

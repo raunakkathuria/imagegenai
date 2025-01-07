@@ -34,27 +34,34 @@ cd <repository-name>
 
 2. Configure the environment variables in `.env` file:
 ```bash
-# Available models: stable-diffusion, stable-diffusion-xl
+# Runtime Configuration
+USE_GPU=false  # Set to true for GPU acceleration
+
+# Model Selection
 MODEL_TYPE=stable-diffusion
 MODEL_ID=CompVis/stable-diffusion-v1-4
 
-# Adjust parameters as needed
+# Model Parameters
 GUIDANCE_SCALE=7.5
 NUM_INFERENCE_STEPS=50
 HEIGHT=512
 WIDTH=512
+
+# GPU Memory Optimization
+ENABLE_ATTENTION_SLICING=true
+ENABLE_MEMORY_EFFICIENT_ATTENTION=true
 ```
 
-3. Choose your runtime mode:
+3. Running the Application:
 
 ### CPU Mode (Default)
+Simply run:
 ```bash
-# Build and run with CPU
 docker compose up --build
 ```
 
-### GPU Mode (Requires NVIDIA GPU)
-First-time setup:
+### GPU Mode
+1. First-time GPU Setup (Ubuntu):
 ```bash
 # Install NVIDIA Driver (if not installed)
 ubuntu-drivers devices
@@ -73,13 +80,13 @@ sudo systemctl restart docker
 
 # Verify GPU setup
 nvidia-smi
-docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
 ```
 
-Run with GPU:
+2. Enable GPU mode:
+   - Set `USE_GPU=true` in `.env` file
+   - Run the application:
 ```bash
-# Build and run with GPU support
-docker compose --profile gpu up --build
+docker compose up --build
 ```
 
 ## API Endpoints
@@ -151,26 +158,28 @@ docker compose up --build
 
 ## Performance Considerations
 
-### CPU Mode
+### CPU Mode (`USE_GPU=false`)
 - Processing will be slower
 - Suitable for testing and development
 - Recommended minimum 8GB RAM
 - Consider reducing image dimensions for better performance
+- Uses PyTorch's CPU optimizations
 
-### GPU Mode
+### GPU Mode (`USE_GPU=true`)
 - Significantly faster processing
 - Requires NVIDIA GPU with sufficient VRAM
 - Better suited for production use
 - Can handle larger image dimensions
+- Automatically enables CUDA optimizations
 
 ## Troubleshooting
 
 1. GPU Issues:
    - Verify NVIDIA driver installation: `nvidia-smi`
    - Check NVIDIA Container Toolkit: `nvidia-ctk --version`
-   - Test GPU access: `docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi`
-   - If you see "Error: unknown runtime specified nvidia", restart Docker: `sudo systemctl restart docker`
-   - If GPU is unavailable, the system will automatically fall back to CPU mode
+   - If `USE_GPU=true` but GPU is unavailable, the system will automatically fall back to CPU mode
+   - Check logs for device information and optimization status
+   - For "Error: unknown runtime specified nvidia", restart Docker: `sudo systemctl restart docker`
 
 2. Memory Issues:
    - Reduce image dimensions
