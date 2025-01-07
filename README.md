@@ -16,39 +16,15 @@ This project provides a containerized API for generating story book-style images
 
 ## Requirements
 
+### Minimum Requirements
 - Docker
+- 8GB RAM (16GB recommended)
+
+### Optional Requirements (for GPU acceleration)
 - NVIDIA GPU
 - NVIDIA Container Toolkit
 
-## NVIDIA Setup Guide
-
-1. Install NVIDIA Driver (if not already installed):
-```bash
-ubuntu-drivers devices
-sudo ubuntu-drivers autoinstall
-```
-Reboot your system after installation.
-
-2. Install NVIDIA Container Toolkit:
-```bash
-# Add NVIDIA package repositories
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-
-# Install NVIDIA Container Toolkit
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-```
-
-3. Verify Installation:
-```bash
-sudo docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
-```
-
-## Project Setup
+## Setup Guide
 
 1. Clone the repository:
 ```bash
@@ -69,9 +45,41 @@ HEIGHT=512
 WIDTH=512
 ```
 
-3. Build and run the container:
+3. Choose your runtime mode:
+
+### CPU Mode (Default)
 ```bash
+# Build and run with CPU
 docker compose up --build
+```
+
+### GPU Mode (Requires NVIDIA GPU)
+First-time setup:
+```bash
+# Install NVIDIA Driver (if not installed)
+ubuntu-drivers devices
+sudo ubuntu-drivers autoinstall
+# Reboot required after driver installation
+
+# Install NVIDIA Container Toolkit
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify GPU setup
+nvidia-smi
+docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+Run with GPU:
+```bash
+# Build and run with GPU support
+docker compose --profile gpu up --build
 ```
 
 ## API Endpoints
@@ -141,13 +149,28 @@ docker compose up --build
    - 7.5 for balanced results
    - 8-10 for more prompt-adherent images
 
+## Performance Considerations
+
+### CPU Mode
+- Processing will be slower
+- Suitable for testing and development
+- Recommended minimum 8GB RAM
+- Consider reducing image dimensions for better performance
+
+### GPU Mode
+- Significantly faster processing
+- Requires NVIDIA GPU with sufficient VRAM
+- Better suited for production use
+- Can handle larger image dimensions
+
 ## Troubleshooting
 
 1. GPU Issues:
    - Verify NVIDIA driver installation: `nvidia-smi`
    - Check NVIDIA Container Toolkit: `nvidia-ctk --version`
-   - Test GPU access in Docker: `docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi`
+   - Test GPU access: `docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi`
    - If you see "Error: unknown runtime specified nvidia", restart Docker: `sudo systemctl restart docker`
+   - If GPU is unavailable, the system will automatically fall back to CPU mode
 
 2. Memory Issues:
    - Reduce image dimensions

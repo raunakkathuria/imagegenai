@@ -1,27 +1,30 @@
-version: '3.8'
-
-# GPU configuration for services
-x-gpu-config: &gpu-config
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [compute, utility]
-  environment:
-    - NVIDIA_VISIBLE_DEVICES=all
-    - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True  # Help with memory fragmentation
+x-common-config: &common-config
+  build: 
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  ports:
+    - "8080:8080"
+  volumes:
+    - ./output:/app/output
 
 services:
+  # CPU version (default)
   image-generator:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    env_file: .env
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./output:/app/output
-    <<: *gpu-config
+    <<: *common-config
+    profiles: ["cpu"]
+
+  # GPU version (use with --profile gpu)
+  image-generator-gpu:
+    <<: *common-config
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [compute, utility]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
