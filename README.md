@@ -93,22 +93,65 @@ The application uses Docker Compose override files to manage GPU configuration:
 - `docker-compose.yml`: Base configuration for CPU mode
 - `docker-compose.gpu.yml`: Additional configuration for GPU support
 
-## API Endpoints
+## API Usage
+
+### API Endpoints
 
 1. Health Check
 ```bash
-GET /
+# Check if the API is running
+curl http://localhost:8080/
+```
+Expected response:
+```json
+{
+    "message": "Image Generation API is running"
+}
 ```
 
 2. Generate Image
 ```bash
-POST /generate
+# Generate image with default prompt
+curl -X POST http://localhost:8080/generate
+
+# Generate image with custom prompt
+curl -X POST http://localhost:8080/generate \
+  -H "Content-Type: application/json" \
+  -d '{"custom_prompt": "A magical treehouse in a giant oak tree, with twinkling lights, rope bridges, and small woodland creatures visiting, watercolor style, whimsical, children book illustration"}'
 ```
-Optional body parameter:
+Expected response:
 ```json
 {
-    "custom_prompt": "Your custom prompt here"
+    "message": "Image generated successfully",
+    "filename": "output/image_20240227_123456_abcd1234.png"
 }
+```
+
+The generated image will be saved in the `output` directory with a timestamp and unique identifier.
+
+### Testing Different Prompts
+
+Here are some example prompts you can try:
+
+1. Fantasy Scene:
+```bash
+curl -X POST http://localhost:8080/generate \
+  -H "Content-Type: application/json" \
+  -d '{"custom_prompt": "A young wizard practicing spells in a cozy library filled with floating books, magical creatures, and sparkling potions, digital art, storybook style"}'
+```
+
+2. Nature Scene:
+```bash
+curl -X POST http://localhost:8080/generate \
+  -H "Content-Type: application/json" \
+  -d '{"custom_prompt": "A peaceful garden with butterflies, friendly bees, and talking flowers having a tea party, soft pastel colors, children book illustration style"}'
+```
+
+3. Adventure Scene:
+```bash
+curl -X POST http://localhost:8080/generate \
+  -H "Content-Type: application/json" \
+  -d '{"custom_prompt": "A group of animal friends sailing a paper boat down a winding river, passing by curious fish and friendly river creatures, watercolor style, whimsical"}'
 ```
 
 ## Model Configuration Guide
@@ -168,6 +211,7 @@ docker compose up --build
 - Recommended minimum 8GB RAM
 - Consider reducing image dimensions for better performance
 - Uses PyTorch's CPU optimizations
+- Default fallback mode if GPU is unavailable
 
 ### GPU Mode (`USE_GPU=true`)
 - Significantly faster processing
@@ -175,6 +219,19 @@ docker compose up --build
 - Better suited for production use
 - Can handle larger image dimensions
 - Automatically enables CUDA optimizations
+- Automatic fallback to CPU mode if:
+  * NVIDIA drivers are not found
+  * GPU is not available
+  * CUDA initialization fails
+
+### Safety and Optimization Features
+- SafeTensors model loading for improved security
+- Content safety filters enabled by default
+- Automatic memory optimization:
+  * Attention slicing for memory efficiency
+  * VAE slicing for SDXL models
+  * CPU offloading when needed
+  * FP16 precision on GPU for better performance
 
 ## Troubleshooting
 
@@ -195,6 +252,7 @@ docker compose up --build
    - Key security features:
      * SafeTensors model loading for improved security
      * Latest ML libraries with security patches
+     * Content safety filters enabled
      * Regular dependency updates recommended
    - If you encounter any issues:
      ```bash
@@ -211,6 +269,10 @@ docker compose up --build
      * Memory-efficient attention mechanisms
      * CPU offloading for better resource management
      * VAE slicing for SDXL models
+   - Safety considerations:
+     * Models include content filtering
+     * Logs provide visibility into generation process
+     * Error handling with graceful fallbacks
 
 4. Best Practices:
    - Regularly update dependencies for security patches

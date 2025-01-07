@@ -63,34 +63,54 @@ class ImageGenerator:
             # Configure model dtype based on device
             dtype = torch.float16 if self.device == "cuda" else torch.float32
 
-            # Load the model with optimizations
-            self.model = model_class.from_pretrained(
-                MODEL_ID,
-                torch_dtype=dtype,
-                variant="fp16" if self.device == "cuda" else None,
-                use_safetensors=True,  # More secure model loading
-                safety_checker=None,  # Disable safety checker for performance
-            )
+            try:
+                # Load the model with optimizations
+                self.model = model_class.from_pretrained(
+                    MODEL_ID,
+                    torch_dtype=dtype,
+                    variant="fp16" if self.device == "cuda" else None,
+                    use_safetensors=True,  # More secure model loading
+                )
 
-            # Move model to appropriate device
-            self.model = self.model.to(self.device)
+                # Move model to appropriate device
+                self.model = self.model.to(self.device)
 
-            # Apply optimizations based on available memory and device
-            if ENABLE_ATTENTION_SLICING:
-                self.model.enable_attention_slicing()
-                logger.info("Enabled attention slicing")
+                # Apply optimizations based on available memory and device
+                if ENABLE_ATTENTION_SLICING:
+                    self.model.enable_attention_slicing()
+                    logger.info("Enabled attention slicing")
 
-            if self.device == "cuda":
-                # Enable additional GPU optimizations
-                self.model.enable_model_cpu_offload()
-                logger.info("Enabled CPU offload for GPU optimization")
+                if self.device == "cuda":
+                    try:
+                        # Enable additional GPU optimizations
+                        self.model.enable_model_cpu_offload()
+                        logger.info("Enabled CPU offload for GPU optimization")
+                    except Exception as e:
+                        logger.warning(f"Could not enable GPU optimizations: {str(e)}")
 
-            if ENABLE_MEMORY_EFFICIENT_ATTENTION:
-                if MODEL_TYPE == "stable-diffusion-xl":
-                    self.model.enable_vae_slicing()
-                    logger.info("Enabled VAE slicing for SDXL")
-                self.model.enable_sequential_cpu_offload()
-                logger.info("Enabled sequential CPU offload")
+                if ENABLE_MEMORY_EFFICIENT_ATTENTION:
+                    if MODEL_TYPE == "stable-diffusion-xl":
+                        self.model.enable_vae_slicing()
+                        logger.info("Enabled VAE slicing for SDXL")
+                    try:
+                        self.model.enable_sequential_cpu_offload()
+                        logger.info("Enabled sequential CPU offload")
+                    except Exception as e:
+                        logger.warning(f"Could not enable CPU offload: {str(e)}")
+
+            except RuntimeError as e:
+                if "Found no NVIDIA driver" in str(e) and self.device == "cuda":
+                    logger.warning("GPU was requested but NVIDIA driver not found. Falling back to CPU...")
+                    self.device = "cpu"
+                    # Retry loading with CPU
+                    self.model = model_class.from_pretrained(
+                        MODEL_ID,
+                        torch_dtype=torch.float32,
+                        use_safetensors=True,
+                    )
+                    self.model = self.model.to(self.device)
+                else:
+                    raise
 
             logger.info(f"Model loaded successfully on {self.device}")
 
