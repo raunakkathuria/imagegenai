@@ -65,42 +65,42 @@ class ImageGenerator:
                 else StableDiffusionPipeline
             )
 
-            def load_on_device(device, dtype):
-                model = model_class.from_pretrained(
-                    MODEL_ID,
-                    torch_dtype=dtype,
-                    variant="fp16" if device == "cuda" else None,
-                    use_safetensors=True,
-                )
-                model = model.to(device)
-                return model
-
-            # Load model directly with the determined device
-            dtype = torch.float16 if self.device == "cuda" else torch.float32
-            self.model = load_on_device(self.device, dtype)
-            logger.info(f"Successfully loaded model on {self.device}")
-
-            # Apply optimizations based on final device
-            if ENABLE_ATTENTION_SLICING:
-                self.model.enable_attention_slicing()
-                logger.info("Enabled attention slicing")
-
+            # Load model with appropriate configuration
             if self.device == "cuda":
+                self.model = model_class.from_pretrained(
+                    MODEL_ID,
+                    torch_dtype=torch.float16,
+                    variant="fp16",
+                    use_safetensors=True,
+                ).to(self.device)
+                logger.info("Loaded model in GPU mode with FP16")
+            else:
+                self.model = model_class.from_pretrained(
+                    MODEL_ID,
+                    torch_dtype=torch.float32,
+                    use_safetensors=True,
+                ).to(self.device)
+                logger.info("Loaded model in CPU mode with FP32")
+
+            # Apply optimizations based on device and model
+            if self.device == "cuda":
+                # GPU-specific optimizations
+                if ENABLE_ATTENTION_SLICING:
+                    self.model.enable_attention_slicing()
+                    logger.info("Enabled attention slicing for GPU")
                 try:
                     self.model.enable_model_cpu_offload()
                     logger.info("Enabled CPU offload for GPU optimization")
                 except Exception as e:
                     logger.warning(f"Could not enable GPU optimizations: {str(e)}")
-
-            if ENABLE_MEMORY_EFFICIENT_ATTENTION:
+            else:
+                # CPU-specific optimizations
+                if ENABLE_ATTENTION_SLICING:
+                    self.model.enable_attention_slicing()
+                    logger.info("Enabled attention slicing for CPU")
                 if MODEL_TYPE == "stable-diffusion-xl":
                     self.model.enable_vae_slicing()
-                    logger.info("Enabled VAE slicing for SDXL")
-                try:
-                    self.model.enable_sequential_cpu_offload()
-                    logger.info("Enabled sequential CPU offload")
-                except Exception as e:
-                    logger.warning(f"Could not enable CPU offload: {str(e)}")
+                    logger.info("Enabled VAE slicing for SDXL on CPU")
 
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
