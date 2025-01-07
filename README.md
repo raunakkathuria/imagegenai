@@ -1,18 +1,24 @@
-# Image Generation API for Children's Stories
+# ImageGen
 
-This project provides a containerized API for generating story book-style images using various AI models. It's designed to be easily configurable through environment variables, allowing you to switch between different models and adjust parameters.
+A flexible, containerized API server for image generation that supports multiple AI models with seamless CPU/GPU switching.
+
+## Overview
+
+ImageGen provides a unified interface for generating images using various AI models. Built for flexibility, it supports both CPU and GPU environments, making it suitable for any deployment scenario from development to production.
 
 ## Supported Models
 
 1. Stable Diffusion v1.4 (Default)
-   - Good for story book style images
+   - Versatile general-purpose model
    - Balanced performance and quality
    - Lower resource requirements
 
 2. Stable Diffusion XL
-   - Higher quality outputs
-   - More resource intensive
-   - Better understanding of prompts
+   - Enhanced image quality
+   - Advanced prompt understanding
+   - Higher resource requirements
+
+The system is designed to be extensible, allowing for easy integration of additional models.
 
 ## Requirements
 
@@ -117,7 +123,7 @@ curl -X POST http://localhost:8080/generate
 # Generate image with custom prompt
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "A magical treehouse in a giant oak tree, with twinkling lights, rope bridges, and small woodland creatures visiting, watercolor style, whimsical, children book illustration"}'
+  -d '{"custom_prompt": "A dramatic coastal sunset with crashing waves against cliffs, vibrant orange and purple sky, photorealistic style, high detail, cinematic lighting"}'
 ```
 Expected response:
 ```json
@@ -129,29 +135,29 @@ Expected response:
 
 The generated image will be saved in the `output` directory with a timestamp and unique identifier.
 
-### Testing Different Prompts
+### Example Prompts
 
-Here are some example prompts you can try:
+Here are some example prompts demonstrating different styles:
 
-1. Fantasy Scene:
+1. Photorealistic:
 ```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "A young wizard practicing spells in a cozy library filled with floating books, magical creatures, and sparkling potions, digital art, storybook style"}'
+  -d '{"custom_prompt": "A modern city skyline at sunset with dramatic clouds, photorealistic, detailed, golden hour lighting, 4k, high definition"}'
 ```
 
-2. Nature Scene:
+2. Digital Art:
 ```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "A peaceful garden with butterflies, friendly bees, and talking flowers having a tea party, soft pastel colors, children book illustration style"}'
+  -d '{"custom_prompt": "A futuristic space station orbiting a purple nebula, digital art, vibrant colors, detailed, sci-fi concept art"}'
 ```
 
-3. Adventure Scene:
+3. Abstract:
 ```bash
 curl -X POST http://localhost:8080/generate \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "A group of animal friends sailing a paper boat down a winding river, passing by curious fish and friendly river creatures, watercolor style, whimsical"}'
+  -d '{"custom_prompt": "Abstract geometric patterns flowing like liquid, neon colors, minimalist design, modern art style"}'
 ```
 
 ## Model Configuration Guide
@@ -195,13 +201,14 @@ docker compose down
 docker compose up --build
 ```
 
-## Best Practices for Story Book Images
+## Best Practices for Image Generation
 
-1. Use descriptive, detailed prompts
-2. Include style-specific keywords like "colorful", "whimsical", "story book style"
-3. Experiment with different guidance scales:
-   - 7.5 for balanced results
-   - 8-10 for more prompt-adherent images
+1. Use clear, detailed prompts
+2. Include style keywords for desired aesthetics
+3. Experiment with different parameters:
+   - Guidance Scale: 7.5 for balanced results, 8-10 for strict prompt adherence
+   - Steps: Higher for quality, lower for speed
+   - Resolution: Adjust based on your needs and resources
 
 ## Performance Considerations
 

@@ -38,13 +38,18 @@ logger = logging.getLogger(__name__)
 class ImageGenerator:
     def __init__(self):
         self.model = None
-        # Check if GPU is requested and available
-        self.device = "cuda" if USE_GPU and torch.cuda.is_available() else "cpu"
+        # Force CPU if USE_GPU is false
+        if not USE_GPU:
+            self.device = "cpu"
+            torch.cuda.is_available = lambda: False  # Prevent CUDA checks when GPU is not requested
+        else:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
         logger.info(f"USE_GPU setting: {USE_GPU}")
         logger.info(f"Using device: {self.device}")
 
-        if USE_GPU and not torch.cuda.is_available():
-            logger.warning("GPU was requested but is not available. Falling back to CPU.")
+        if USE_GPU and self.device == "cpu":
+            logger.warning("GPU was requested but is not available. Using CPU mode.")
         elif self.device == "cpu":
             logger.info("Running in CPU mode. This will be slower than GPU acceleration.")
 
@@ -70,21 +75,10 @@ class ImageGenerator:
                 model = model.to(device)
                 return model
 
-            try:
-                # First attempt: Try loading with requested device
-                dtype = torch.float16 if self.device == "cuda" else torch.float32
-                self.model = load_on_device(self.device, dtype)
-                logger.info(f"Successfully loaded model on {self.device}")
-            except (RuntimeError, Exception) as e:
-                if self.device == "cuda":
-                    # If GPU fails, fallback to CPU
-                    logger.warning(f"Failed to load model on GPU: {str(e)}")
-                    logger.info("Falling back to CPU...")
-                    self.device = "cpu"
-                    self.model = load_on_device("cpu", torch.float32)
-                    logger.info("Successfully loaded model on CPU")
-                else:
-                    raise
+            # Load model directly with the determined device
+            dtype = torch.float16 if self.device == "cuda" else torch.float32
+            self.model = load_on_device(self.device, dtype)
+            logger.info(f"Successfully loaded model on {self.device}")
 
             # Apply optimizations based on final device
             if ENABLE_ATTENTION_SLICING:
@@ -123,32 +117,29 @@ class ImageGenerator:
                       f"dimensions={WIDTH}x{HEIGHT}")
             logger.info(f"Using device: {self.device}")
 
-            try:
-                # Generate image
-                image = self.model(
-                    prompt=prompt,
-                    guidance_scale=GUIDANCE_SCALE,
-                    num_inference_steps=NUM_INFERENCE_STEPS,
-                    height=HEIGHT,
-                    width=WIDTH,
-                ).images[0]
+            # Ensure we're on CPU if CUDA is not available
+            if not torch.cuda.is_available() and self.device == "cuda":
+                logger.warning("CUDA not available, falling back to CPU...")
+                self.device = "cpu"
+                self.load_model()
 
-                # Create filename with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
+            # Generate image
+            image = self.model(
+                prompt=prompt,
+                guidance_scale=GUIDANCE_SCALE,
+                num_inference_steps=NUM_INFERENCE_STEPS,
+                height=HEIGHT,
+                width=WIDTH,
+            ).images[0]
 
-                # Save image
-                image.save(filename)
-                logger.info(f"Image saved successfully: {filename}")
-                return filename
-            except RuntimeError as e:
-                if "Found no NVIDIA driver" in str(e) and self.device == "cuda":
-                    # If GPU fails during generation, try to reload model on CPU
-                    logger.warning("GPU error during generation. Attempting CPU fallback...")
-                    self.device = "cpu"
-                    self.load_model()  # Reload model on CPU
-                    return self.generate(prompt)  # Retry generation
-                raise
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
+
+            # Save image
+            image.save(filename)
+            logger.info(f"Image saved successfully: {filename}")
+            return filename
         except Exception as e:
             logger.error(f"Error generating image: {str(e)}")
             raise
