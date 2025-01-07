@@ -205,24 +205,38 @@ docker compose up --build
 
 ## Performance Considerations
 
-### CPU Mode (`USE_GPU=false`)
-- Processing will be slower
-- Suitable for testing and development
+### Runtime Modes
+
+#### CPU Mode (`USE_GPU=false`)
+- Default mode for maximum compatibility
+- Processing will be slower but reliable
+- Suitable for:
+  * Development and testing
+  * Systems without GPU
+  * Environments where GPU setup is complex
 - Recommended minimum 8GB RAM
 - Consider reducing image dimensions for better performance
 - Uses PyTorch's CPU optimizations
-- Default fallback mode if GPU is unavailable
 
-### GPU Mode (`USE_GPU=true`)
-- Significantly faster processing
+#### GPU Mode (`USE_GPU=true`)
+- Significantly faster processing when available
 - Requires NVIDIA GPU with sufficient VRAM
 - Better suited for production use
 - Can handle larger image dimensions
-- Automatically enables CUDA optimizations
-- Automatic fallback to CPU mode if:
-  * NVIDIA drivers are not found
-  * GPU is not available
+- Features:
+  * Automatic CPU fallback if GPU is unavailable
+  * Seamless recovery from GPU errors
+  * Dynamic optimization based on available resources
+- Fallback scenarios (automatic CPU switch):
+  * NVIDIA drivers not found
+  * GPU memory insufficient
   * CUDA initialization fails
+  * Runtime GPU errors
+
+The system will automatically handle transitions between GPU and CPU:
+1. If GPU is requested but unavailable, falls back to CPU
+2. If GPU fails during operation, automatically retries on CPU
+3. Continues to work on CPU even after GPU failures
 
 ### Safety and Optimization Features
 - SafeTensors model loading for improved security

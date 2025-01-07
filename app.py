@@ -60,59 +60,53 @@ class ImageGenerator:
                 else StableDiffusionPipeline
             )
 
-            # Configure model dtype based on device
-            dtype = torch.float16 if self.device == "cuda" else torch.float32
-
-            try:
-                # Load the model with optimizations
-                self.model = model_class.from_pretrained(
+            def load_on_device(device, dtype):
+                model = model_class.from_pretrained(
                     MODEL_ID,
                     torch_dtype=dtype,
-                    variant="fp16" if self.device == "cuda" else None,
-                    use_safetensors=True,  # More secure model loading
+                    variant="fp16" if device == "cuda" else None,
+                    use_safetensors=True,
                 )
+                model = model.to(device)
+                return model
 
-                # Move model to appropriate device
-                self.model = self.model.to(self.device)
-
-                # Apply optimizations based on available memory and device
-                if ENABLE_ATTENTION_SLICING:
-                    self.model.enable_attention_slicing()
-                    logger.info("Enabled attention slicing")
-
+            try:
+                # First attempt: Try loading with requested device
+                dtype = torch.float16 if self.device == "cuda" else torch.float32
+                self.model = load_on_device(self.device, dtype)
+                logger.info(f"Successfully loaded model on {self.device}")
+            except (RuntimeError, Exception) as e:
                 if self.device == "cuda":
-                    try:
-                        # Enable additional GPU optimizations
-                        self.model.enable_model_cpu_offload()
-                        logger.info("Enabled CPU offload for GPU optimization")
-                    except Exception as e:
-                        logger.warning(f"Could not enable GPU optimizations: {str(e)}")
-
-                if ENABLE_MEMORY_EFFICIENT_ATTENTION:
-                    if MODEL_TYPE == "stable-diffusion-xl":
-                        self.model.enable_vae_slicing()
-                        logger.info("Enabled VAE slicing for SDXL")
-                    try:
-                        self.model.enable_sequential_cpu_offload()
-                        logger.info("Enabled sequential CPU offload")
-                    except Exception as e:
-                        logger.warning(f"Could not enable CPU offload: {str(e)}")
-
-            except RuntimeError as e:
-                if "Found no NVIDIA driver" in str(e) and self.device == "cuda":
-                    logger.warning("GPU was requested but NVIDIA driver not found. Falling back to CPU...")
+                    # If GPU fails, fallback to CPU
+                    logger.warning(f"Failed to load model on GPU: {str(e)}")
+                    logger.info("Falling back to CPU...")
                     self.device = "cpu"
-                    # Retry loading with CPU
-                    self.model = model_class.from_pretrained(
-                        MODEL_ID,
-                        torch_dtype=torch.float32,
-                        use_safetensors=True,
-                    )
-                    self.model = self.model.to(self.device)
+                    self.model = load_on_device("cpu", torch.float32)
+                    logger.info("Successfully loaded model on CPU")
                 else:
                     raise
 
-            logger.info(f"Model loaded successfully on {self.device}")
+            # Apply optimizations based on final device
+            if ENABLE_ATTENTION_SLICING:
+                self.model.enable_attention_slicing()
+                logger.info("Enabled attention slicing")
+
+            if self.device == "cuda":
+                try:
+                    self.model.enable_model_cpu_offload()
+                    logger.info("Enabled CPU offload for GPU optimization")
+                except Exception as e:
+                    logger.warning(f"Could not enable GPU optimizations: {str(e)}")
+
+            if ENABLE_MEMORY_EFFICIENT_ATTENTION:
+                if MODEL_TYPE == "stable-diffusion-xl":
+                    self.model.enable_vae_slicing()
+                    logger.info("Enabled VAE slicing for SDXL")
+                try:
+                    self.model.enable_sequential_cpu_offload()
+                    logger.info("Enabled sequential CPU offload")
+                except Exception as e:
+                    logger.warning(f"Could not enable CPU offload: {str(e)}")
 
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
@@ -127,24 +121,34 @@ class ImageGenerator:
             logger.info(f"Parameters: steps={NUM_INFERENCE_STEPS}, "
                       f"guidance_scale={GUIDANCE_SCALE}, "
                       f"dimensions={WIDTH}x{HEIGHT}")
+            logger.info(f"Using device: {self.device}")
 
-            # Generate image
-            image = self.model(
-                prompt=prompt,
-                guidance_scale=GUIDANCE_SCALE,
-                num_inference_steps=NUM_INFERENCE_STEPS,
-                height=HEIGHT,
-                width=WIDTH,
-            ).images[0]
+            try:
+                # Generate image
+                image = self.model(
+                    prompt=prompt,
+                    guidance_scale=GUIDANCE_SCALE,
+                    num_inference_steps=NUM_INFERENCE_STEPS,
+                    height=HEIGHT,
+                    width=WIDTH,
+                ).images[0]
 
-            # Create filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
+                # Create filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
 
-            # Save image
-            image.save(filename)
-            logger.info(f"Image saved successfully: {filename}")
-            return filename
+                # Save image
+                image.save(filename)
+                logger.info(f"Image saved successfully: {filename}")
+                return filename
+            except RuntimeError as e:
+                if "Found no NVIDIA driver" in str(e) and self.device == "cuda":
+                    # If GPU fails during generation, try to reload model on CPU
+                    logger.warning("GPU error during generation. Attempting CPU fallback...")
+                    self.device = "cpu"
+                    self.load_model()  # Reload model on CPU
+                    return self.generate(prompt)  # Retry generation
+                raise
         except Exception as e:
             logger.error(f"Error generating image: {str(e)}")
             raise
