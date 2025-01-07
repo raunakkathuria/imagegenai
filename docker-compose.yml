@@ -8,3 +8,7 @@ services:
       - "8080:8080"
     volumes:
       - ./output:/app/output
+      - huggingface_cache:/root/.cache/huggingface
+
+volumes:
+  huggingface_cache:
