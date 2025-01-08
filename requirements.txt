@@ -1,7 +1,7 @@
 numpy>=1.26.4
 huggingface-hub==0.19.4  # Last version with cached_download
 diffusers==0.24.0  # Version that works with both PixArt and SDXL
-transformers==4.35.2  # Compatible version for all models
+transformers==4.38.0  # Compatible version for all models
 torch>=2.2.1
 accelerate==0.25.0  # Version compatible with diffusers
 tqdm>=4.66.1  # For progress bars
