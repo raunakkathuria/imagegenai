@@ -12,11 +12,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+RUN mkdir -p output cache models && \
+    chmod 777 output cache models
+
 # Copy application code
 COPY . .
-
-# Create output directory
-RUN mkdir -p output
 
 EXPOSE 8080
 
