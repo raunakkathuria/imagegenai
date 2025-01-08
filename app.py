@@ -132,11 +132,37 @@ class ImageGenerator:
                 model_params["device_map"] = "auto"
                 logger.info("Enabling sequential CPU offload")
 
-            # Load model with appropriate configuration
-            self.model = model_class.from_pretrained(
-                MODEL_ID,
-                **model_params
-            ).to(self.device)
+            local_model_path = f"/app/models/{MODEL_TYPE}/{MODEL_ID.split('/')[-1]}"
+
+            if os.path.exists(local_model_path):
+                logger.info(f"Loading model from local cache: {local_model_path}")
+                # Load from local cache
+                self.model = model_class.from_pretrained(
+                    local_model_path,
+                    **model_params,
+                    low_cpu_mem_usage=True
+                ).to(self.device)
+            else:
+                # Download and save to local cache
+                logger.info("Model not found in cache. Starting download and pipeline loading:")
+                logger.info("1. Loading tokenizer and text encoder")
+                logger.info("2. Loading UNet for diffusion")
+                logger.info("3. Loading VAE for image encoding/decoding")
+                logger.info("4. Loading scheduler for inference steps")
+                logger.info("5. Finalizing pipeline setup")
+
+                self.model = model_class.from_pretrained(
+                    MODEL_ID,
+                    **model_params,
+                    low_cpu_mem_usage=True
+                ).to(self.device)
+
+                # Save the model to local cache
+                os.makedirs(local_model_path, exist_ok=True)
+                logger.info(f"Saving model to local cache: {local_model_path}")
+                self.model.save_pretrained(local_model_path)
+
+            logger.info("Pipeline components loaded successfully")
 
             # Apply optimizations based on device and model
             if self.device == "cuda":

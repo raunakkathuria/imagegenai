@@ -9,6 +9,8 @@ services:
     volumes:
       - ./output:/app/output
       - huggingface_cache:/root/.cache/huggingface
+      - model_cache:/app/models  # Persistent storage for downloaded models
 
 volumes:
   huggingface_cache:
+  model_cache:  # Persistent volume for model storage
