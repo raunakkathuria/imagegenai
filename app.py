@@ -33,10 +33,15 @@ WIDTH = int(os.getenv("WIDTH", 512))
 PROMPT = os.getenv("PROMPT", "")
 VARIANT = os.getenv("VARIANT", None)  # Optional variant parameter
 
-# GPU configuration
+# GPU and Memory configuration
 USE_GPU = bool(strtobool(os.getenv("USE_GPU", "false")))
 ENABLE_ATTENTION_SLICING = bool(strtobool(os.getenv("ENABLE_ATTENTION_SLICING", "true")))
 ENABLE_MEMORY_EFFICIENT_ATTENTION = bool(strtobool(os.getenv("ENABLE_MEMORY_EFFICIENT_ATTENTION", "true")))
+ENABLE_MODEL_CPU_OFFLOAD = bool(strtobool(os.getenv("ENABLE_MODEL_CPU_OFFLOAD", "false")))
+ENABLE_SEQUENTIAL_CPU_OFFLOAD = bool(strtobool(os.getenv("ENABLE_SEQUENTIAL_CPU_OFFLOAD", "false")))
+EMPTY_CACHE_BETWEEN_RUNS = bool(strtobool(os.getenv("EMPTY_CACHE_BETWEEN_RUNS", "false")))
+MAX_MEMORY = float(os.getenv("MAX_MEMORY", "1.0"))
+TORCH_DTYPE = os.getenv("TORCH_DTYPE", "float32")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -96,13 +101,36 @@ class ImageGenerator:
 
             # Configure device-specific parameters
             if self.device == "cuda":
-                model_params["torch_dtype"] = torch.float16
+                # Set torch dtype based on configuration
+                if TORCH_DTYPE == "float16":
+                    model_params["torch_dtype"] = torch.float16
+                    logger.info("Using FP16 precision")
+                else:
+                    model_params["torch_dtype"] = torch.float32
+                    logger.info("Using FP32 precision")
+
                 if VARIANT:  # Only add variant if it's specified
                     model_params["variant"] = VARIANT
-                logger.info(f"Loading model in GPU mode with FP16{' and variant ' + VARIANT if VARIANT else ''}")
+
+                # Set maximum memory usage if specified
+                if MAX_MEMORY < 1.0:
+                    max_memory = {0: f"{MAX_MEMORY:.1%}"}
+                    model_params["max_memory"] = max_memory
+                    logger.info(f"Setting max GPU memory usage to {MAX_MEMORY:.1%}")
+
+                logger.info(f"Loading model in GPU mode{' with variant ' + VARIANT if VARIANT else ''}")
             else:
                 model_params["torch_dtype"] = torch.float32
                 logger.info("Loading model in CPU mode with FP32")
+
+            # Add offload parameters if enabled
+            if ENABLE_MODEL_CPU_OFFLOAD:
+                model_params["offload_folder"] = "offload"
+                logger.info("Enabling model CPU offload")
+
+            if ENABLE_SEQUENTIAL_CPU_OFFLOAD:
+                model_params["device_map"] = "auto"
+                logger.info("Enabling sequential CPU offload")
 
             # Load model with appropriate configuration
             self.model = model_class.from_pretrained(
@@ -177,14 +205,19 @@ class ImageGenerator:
                 self.device = "cpu"
                 self.load_model()
 
-            # Generate image
-            image = self.model(
-                prompt=prompt,
-                guidance_scale=GUIDANCE_SCALE,
-                num_inference_steps=NUM_INFERENCE_STEPS,
-                height=HEIGHT,
-                width=WIDTH,
-            ).images[0]
+            # Generate image with memory management
+            try:
+                image = self.model(
+                    prompt=prompt,
+                    guidance_scale=GUIDANCE_SCALE,
+                    num_inference_steps=NUM_INFERENCE_STEPS,
+                    height=HEIGHT,
+                    width=WIDTH,
+                ).images[0]
+            finally:
+                if EMPTY_CACHE_BETWEEN_RUNS and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logger.info("Cleared CUDA cache after generation")
 
             # Create filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
