@@ -10,14 +10,10 @@ services:
       - "8080:8080"
     volumes:
       - ./output:/app/output
-      - huggingface_cache:/root/.cache/huggingface
-      - model_cache:/app/models  # Persistent storage for downloaded models
+      - ./cache:/root/.cache/huggingface   # Bind mount for better control
+      - ./models:/app/models               # Bind mount for better control
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
-
-volumes:
-  huggingface_cache:
-  model_cache:  # Persistent volume for model storage

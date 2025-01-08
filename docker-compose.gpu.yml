@@ -13,3 +13,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
       - CUDA_LAUNCH_BLOCKING=1  # More stable GPU operations
+    volumes:
+      - ./output:/app/output
+      - ./cache:/root/.cache/huggingface   # Bind mount for better control
+      - ./models:/app/models               # Bind mount for better control
