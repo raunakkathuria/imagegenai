@@ -173,4 +173,34 @@ async def generate_image(custom_prompt: str = None):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8080)))
+
+    # Get number of workers from environment
+    WORKERS = int(os.getenv("WORKERS", 1))
+
+    # Performance Note:
+    # Worker configuration impacts performance:
+    # Single worker (default):
+    # + Better memory efficiency (only one model loaded)
+    # + Full GPU/CPU resources for each request
+    # + Consistent generation times
+    # - Only one request processed at a time
+    #
+    # Multiple workers:
+    # + Can handle concurrent requests
+    # - Splits GPU/CPU resources between workers
+    # - Higher memory usage (model loaded per worker)
+    # - May impact generation time per request
+    #
+    # For production scaling, consider:
+    # 1. Multiple separate service instances (horizontal scaling)
+    # 2. Queue system for handling multiple requests
+    # 3. Load balancer to distribute requests across instances
+
+    logger.info(f"Starting server with {WORKERS} worker{'s' if WORKERS > 1 else ''}")
+
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", 8080)),
+        workers=WORKERS
+    )
