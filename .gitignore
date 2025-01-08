@@ -37,3 +37,8 @@ output/
 
 # Logs
 *.log
+
+# Model and cache directories
+cache/
+models/
+output/

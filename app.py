@@ -119,12 +119,27 @@ class ImageGenerator:
                 model_params["torch_dtype"] = torch.float32
                 logger.info("Loading model in CPU mode with FP32")
 
-            # Add offload parameters if enabled
+            # Configure offload parameters
             if ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD:
+                logger.info("Configuring CPU offload settings")
                 model_params["device_map"] = "auto"
-                logger.info("Enabling automatic device mapping for offload")
+                model_params["offload_folder"] = "offload"
                 # Remove direct device setting when using device_map
                 model_params.pop("device", None)
+
+                # Set torch dtype explicitly for offloading
+                if TORCH_DTYPE == "float16":
+                    model_params["torch_dtype"] = torch.float16
+                    logger.info("Using FP16 precision with CPU offload")
+                else:
+                    model_params["torch_dtype"] = torch.float32
+                    logger.info("Using FP32 precision with CPU offload")
+
+                # Log offload configuration
+                logger.info("CPU offload enabled:")
+                logger.info(f"- Device mapping: {model_params['device_map']}")
+                logger.info(f"- Offload folder: {model_params['offload_folder']}")
+                logger.info("Note: Meta device warnings are normal when using CPU offload")
 
             # Determine model type and configuration
             if MODEL_TYPE == "PixArt-alpha":
@@ -147,7 +162,9 @@ class ImageGenerator:
             else:
                 model_class = StableDiffusionPipeline
 
-            local_model_path = f"/app/models/{MODEL_TYPE}/{MODEL_ID.split('/')[-1]}"
+            # Use simpler path structure for bind mount
+            model_name = MODEL_ID.split('/')[-1].replace('/', '_')
+            local_model_path = f"/app/models/{model_name}"
 
             # Always load from HuggingFace for PixArt due to meta tensor issues
             if MODEL_TYPE == "PixArt-alpha":
