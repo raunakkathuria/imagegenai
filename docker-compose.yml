@@ -4,12 +4,19 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
     ports:
       - "8080:8080"
     volumes:
       - ./output:/app/output
       - huggingface_cache:/root/.cache/huggingface
       - model_cache:/app/models  # Persistent storage for downloaded models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
 
 volumes:
   huggingface_cache:

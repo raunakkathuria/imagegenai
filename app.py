@@ -17,11 +17,18 @@ from PIL import Image
 import uuid
 from datetime import datetime
 from distutils.util import strtobool
+from contextlib import asynccontextmanager
 
 # Load environment variables
 load_dotenv()
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Suppress FutureWarning from transformers
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Model configurations
 MODEL_TYPE = os.getenv("MODEL_TYPE", "stable-diffusion")
@@ -42,10 +49,6 @@ ENABLE_SEQUENTIAL_CPU_OFFLOAD = bool(strtobool(os.getenv("ENABLE_SEQUENTIAL_CPU_
 EMPTY_CACHE_BETWEEN_RUNS = bool(strtobool(os.getenv("EMPTY_CACHE_BETWEEN_RUNS", "false")))
 MAX_MEMORY = float(os.getenv("MAX_MEMORY", "1.0"))
 TORCH_DTYPE = os.getenv("TORCH_DTYPE", "float32")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def log_memory_usage():
     """Log current memory usage statistics"""
@@ -85,38 +88,10 @@ class ImageGenerator:
 
             # Prepare model loading parameters
             model_params = {
-                "use_safetensors": True
+                "use_safetensors": True,
+                "low_cpu_mem_usage": True,
+                "device": self.device
             }
-
-            # Determine model type and configuration
-            if MODEL_TYPE == "PixArt-alpha":
-                model_class = PixArtAlphaPipeline
-                # Force these settings for PixArt-LCM
-                model_params["torch_dtype"] = torch.float16
-                model_params["safety_checker"] = None
-                model_params["requires_safety_checker"] = False
-                model_params["use_safetensors"] = True
-                if "LCM" in MODEL_ID:
-                    logger.info("Detected LCM model variant, optimizing settings")
-                    # Additional LCM-specific settings
-                    model_params["low_cpu_mem_usage"] = True
-                    if self.device == "cuda":
-                        model_params["variant"] = "fp16"
-            elif MODEL_TYPE == "stable-diffusion-xl":
-                model_class = StableDiffusionXLPipeline
-                # SDXL specific optimizations
-                if "turbo" in MODEL_ID.lower():
-                    logger.info("Detected SDXL Turbo, optimizing settings")
-                    model_params["variant"] = "fp16"
-                    model_params["torch_dtype"] = torch.float16
-                else:
-                    logger.info("Loading SDXL base model")
-                    # Enable VAE slicing for SDXL base model
-                    model_params["vae_tiling"] = True
-            elif "Hyper-SD" in MODEL_ID:
-                model_class = AutoPipelineForText2Image
-            else:
-                model_class = StableDiffusionPipeline
 
             # Configure device-specific parameters
             if self.device == "cuda":
@@ -133,9 +108,10 @@ class ImageGenerator:
 
                 # Set maximum memory usage if specified
                 if MAX_MEMORY < 1.0:
-                    max_memory = {0: f"{MAX_MEMORY:.1%}"}
+                    memory_in_gb = int(torch.cuda.get_device_properties(0).total_memory * MAX_MEMORY / 1024 / 1024 / 1024)
+                    max_memory = {0: f"{memory_in_gb}GB"}
                     model_params["max_memory"] = max_memory
-                    logger.info(f"Setting max GPU memory usage to {MAX_MEMORY:.1%}")
+                    logger.info(f"Setting max GPU memory to {memory_in_gb}GB")
 
                 logger.info(f"Loading model in GPU mode{' with variant ' + VARIANT if VARIANT else ''}")
             else:
@@ -143,17 +119,32 @@ class ImageGenerator:
                 logger.info("Loading model in CPU mode with FP32")
 
             # Add offload parameters if enabled
-            if ENABLE_MODEL_CPU_OFFLOAD:
-                model_params["offload_folder"] = "offload"
-                logger.info("Enabling model CPU offload")
+            if ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD:
+                model_params["device_map"] = "auto"
+                logger.info("Enabling automatic device mapping for offload")
+                # Remove direct device setting when using device_map
+                model_params.pop("device", None)
 
-            if ENABLE_SEQUENTIAL_CPU_OFFLOAD:
-                if MODEL_TYPE == "PixArt-alpha":
-                    model_params["device_map"] = "balanced"
-                    logger.info("Enabling balanced CPU offload for PixArt")
+            # Determine model type and configuration
+            if MODEL_TYPE == "PixArt-alpha":
+                model_class = PixArtAlphaPipeline
+                # PixArt model settings
+                if "LCM" in MODEL_ID:
+                    logger.info("Detected LCM model variant, optimizing settings")
+            elif MODEL_TYPE == "stable-diffusion-xl":
+                model_class = StableDiffusionXLPipeline
+                # SDXL specific optimizations
+                if "turbo" in MODEL_ID.lower():
+                    logger.info("Detected SDXL Turbo, optimizing settings")
+                    if TORCH_DTYPE == "float16":
+                        model_params["variant"] = "fp16"
                 else:
-                    model_params["device_map"] = "auto"
-                    logger.info("Enabling sequential CPU offload")
+                    logger.info("Loading SDXL base model")
+                    model_params["vae_tiling"] = True
+            elif "Hyper-SD" in MODEL_ID:
+                model_class = AutoPipelineForText2Image
+            else:
+                model_class = StableDiffusionPipeline
 
             local_model_path = f"/app/models/{MODEL_TYPE}/{MODEL_ID.split('/')[-1]}"
 
@@ -163,7 +154,7 @@ class ImageGenerator:
                 self.model = model_class.from_pretrained(
                     local_model_path,
                     **model_params
-                ).to(self.device)
+                )
             else:
                 # Download and save to local cache
                 logger.info("Model not found in cache. Starting download and pipeline loading:")
@@ -176,7 +167,7 @@ class ImageGenerator:
                 self.model = model_class.from_pretrained(
                     MODEL_ID,
                     **model_params
-                ).to(self.device)
+                )
 
                 # Save the model to local cache
                 os.makedirs(local_model_path, exist_ok=True)
@@ -196,8 +187,6 @@ class ImageGenerator:
                         # SDXL base model specific optimizations
                         self.model.enable_vae_tiling()
                         logger.info("Enabled VAE tiling for SDXL")
-                    self.model.enable_model_cpu_offload()
-                    logger.info("Enabled CPU offload for GPU optimization")
                 except Exception as e:
                     logger.warning(f"Could not enable GPU optimizations: {str(e)}")
             else:
@@ -217,10 +206,6 @@ class ImageGenerator:
         """Clean up resources and free memory"""
         if self.model is not None:
             try:
-                # Move model to CPU before deletion
-                if hasattr(self.model, 'to'):
-                    self.model.to('cpu')
-
                 # Delete model and clear CUDA cache
                 del self.model
                 self.model = None
@@ -249,12 +234,6 @@ class ImageGenerator:
                       f"guidance_scale={GUIDANCE_SCALE}, "
                       f"dimensions={WIDTH}x{HEIGHT}")
             logger.info(f"Using device: {self.device}")
-
-            # Ensure we're on CPU if CUDA is not available
-            if not torch.cuda.is_available() and self.device == "cuda":
-                logger.warning("CUDA not available, falling back to CPU...")
-                self.device = "cpu"
-                self.load_model()
 
             # Generate image with memory management
             try:
@@ -286,9 +265,23 @@ class ImageGenerator:
             logger.error(f"Error generating image: {str(e)}")
             raise
 
-# Initialize generator with memory monitoring
-generator = ImageGenerator()
-log_memory_usage()
+# Global generator instance
+generator = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle manager for the FastAPI application"""
+    global generator
+    # Startup: Initialize generator
+    generator = ImageGenerator()
+    log_memory_usage()
+    yield
+    # Shutdown: cleanup resources
+    if generator:
+        logger.info("Shutting down application, cleaning up resources...")
+        generator.cleanup()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def root():
@@ -297,49 +290,36 @@ async def root():
 @app.post("/generate")
 async def generate_image(custom_prompt: str = None):
     try:
+        if not generator:
+            raise HTTPException(status_code=503, detail="Generator not initialized")
         filename = generator.generate(custom_prompt)
         return {"message": "Image generated successfully", "filename": filename}
     except Exception as e:
         # Attempt cleanup on error
-        generator.cleanup()
+        if generator:
+            generator.cleanup()
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup resources on application shutdown"""
-    logger.info("Shutting down application, cleaning up resources...")
-    generator.cleanup()
 
 if __name__ == "__main__":
     import uvicorn
+    import sys
+    import pathlib
 
     # Get number of workers from environment
     WORKERS = int(os.getenv("WORKERS", 1))
 
-    # Performance Note:
-    # Worker configuration impacts performance:
-    # Single worker (default):
-    # + Better memory efficiency (only one model loaded)
-    # + Full GPU/CPU resources for each request
-    # + Consistent generation times
-    # - Only one request processed at a time
-    #
-    # Multiple workers:
-    # + Can handle concurrent requests
-    # - Splits GPU/CPU resources between workers
-    # - Higher memory usage (model loaded per worker)
-    # - May impact generation time per request
-    #
-    # For production scaling, consider:
-    # 1. Multiple separate service instances (horizontal scaling)
-    # 2. Queue system for handling multiple requests
-    # 3. Load balancer to distribute requests across instances
+    if WORKERS > 1:
+        logger.warning("Using multiple workers may cause high memory usage and potential instability")
+        logger.warning("Consider using WORKERS=1 for better stability")
 
-    logger.info(f"Starting server with {WORKERS} worker{'s' if WORKERS > 1 else ''}")
+    # Get the directory containing the script
+    file_path = pathlib.Path(__file__).parent.absolute()
+    sys.path.append(str(file_path))
 
     uvicorn.run(
-        app,
+        "app:app",  # Use module:app format
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8080)),
-        workers=WORKERS
+        workers=WORKERS,
+        reload=False  # Disable reload to prevent duplicate model loading
     )

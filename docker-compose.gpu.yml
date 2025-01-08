@@ -6,7 +6,10 @@ services:
           devices:
             - driver: nvidia
               capabilities: [compute, utility]
+        limits:
+          memory: 8G  # Lower memory limit to prevent OOM
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
+      - CUDA_LAUNCH_BLOCKING=1  # More stable GPU operations
