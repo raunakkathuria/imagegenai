@@ -38,6 +38,7 @@ NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS", 50))
 HEIGHT = int(os.getenv("HEIGHT", 512))
 WIDTH = int(os.getenv("WIDTH", 512))
 PROMPT = os.getenv("PROMPT", "")
+NEGATIVE_PROMPT = os.getenv("NEGATIVE_PROMPT", "blurry, low quality, distorted, deformed, ugly, bad anatomy, disfigured, poorly drawn, extra limbs, bad proportions, gross proportions, text, watermark")
 VARIANT = os.getenv("VARIANT", None)  # Optional variant parameter
 
 # GPU and Memory configuration
@@ -148,31 +149,39 @@ class ImageGenerator:
 
             local_model_path = f"/app/models/{MODEL_TYPE}/{MODEL_ID.split('/')[-1]}"
 
-            if os.path.exists(local_model_path):
-                logger.info(f"Loading model from local cache: {local_model_path}")
-                # Load from local cache
-                self.model = model_class.from_pretrained(
-                    local_model_path,
-                    **model_params
-                )
-            else:
-                # Download and save to local cache
-                logger.info("Model not found in cache. Starting download and pipeline loading:")
-                logger.info("1. Loading tokenizer and text encoder")
-                logger.info("2. Loading UNet for diffusion")
-                logger.info("3. Loading VAE for image encoding/decoding")
-                logger.info("4. Loading scheduler for inference steps")
-                logger.info("5. Finalizing pipeline setup")
-
+            # Always load from HuggingFace for PixArt due to meta tensor issues
+            if MODEL_TYPE == "PixArt-alpha":
+                logger.info("Loading PixArt model directly from HuggingFace")
                 self.model = model_class.from_pretrained(
                     MODEL_ID,
                     **model_params
                 )
+            else:
+                if os.path.exists(local_model_path):
+                    logger.info(f"Loading model from local cache: {local_model_path}")
+                    # Load from local cache
+                    self.model = model_class.from_pretrained(
+                        local_model_path,
+                        **model_params
+                    )
+                else:
+                    # Download and save to local cache
+                    logger.info("Model not found in cache. Starting download and pipeline loading:")
+                    logger.info("1. Loading tokenizer and text encoder")
+                    logger.info("2. Loading UNet for diffusion")
+                    logger.info("3. Loading VAE for image encoding/decoding")
+                    logger.info("4. Loading scheduler for inference steps")
+                    logger.info("5. Finalizing pipeline setup")
 
-                # Save the model to local cache
-                os.makedirs(local_model_path, exist_ok=True)
-                logger.info(f"Saving model to local cache: {local_model_path}")
-                self.model.save_pretrained(local_model_path)
+                    self.model = model_class.from_pretrained(
+                        MODEL_ID,
+                        **model_params
+                    )
+
+                    # Save the model to local cache
+                    os.makedirs(local_model_path, exist_ok=True)
+                    logger.info(f"Saving model to local cache: {local_model_path}")
+                    self.model.save_pretrained(local_model_path)
 
             logger.info("Pipeline components loaded successfully")
 
@@ -237,12 +246,31 @@ class ImageGenerator:
 
             # Generate image with memory management
             try:
+                # Different pipelines have different callback parameter names
+                callback_params = {}
+                if hasattr(self.model, 'scheduler'):
+                    logger.info("Setting up progress callback")
+
+                    def callback_fn(step: int, _timestep: int, _latents: torch.FloatTensor) -> None:
+                        logger.info(f"Generation progress: step {step + 1}/{NUM_INFERENCE_STEPS}")
+
+                    # Try different parameter names used by different pipelines
+                    if MODEL_TYPE == "PixArt-alpha":
+                        callback_params["callback_on_step_end"] = callback_fn
+                        callback_params["callback_on_step_end_tensor_inputs"] = ["latents"]
+                    else:
+                        callback_params["callback"] = callback_fn
+                        callback_params["callback_steps"] = 1
+
+                logger.info(f"Starting generation with {NUM_INFERENCE_STEPS} steps")
                 image = self.model(
                     prompt=prompt,
+                    negative_prompt=NEGATIVE_PROMPT,
                     guidance_scale=GUIDANCE_SCALE,
                     num_inference_steps=NUM_INFERENCE_STEPS,
                     height=HEIGHT,
                     width=WIDTH,
+                    **callback_params
                 ).images[0]
             finally:
                 if EMPTY_CACHE_BETWEEN_RUNS and torch.cuda.is_available():
