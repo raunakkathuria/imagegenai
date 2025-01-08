@@ -1,8 +1,12 @@
 import os
 import logging
+import gc
+import psutil
+import torch.cuda
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import torch
+from typing import Optional
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionXLPipeline,
@@ -38,9 +42,21 @@ ENABLE_MEMORY_EFFICIENT_ATTENTION = bool(strtobool(os.getenv("ENABLE_MEMORY_EFFI
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def log_memory_usage():
+    """Log current memory usage statistics"""
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+
+    logger.info(f"Memory Usage - RSS: {mem_info.rss / 1024 / 1024:.2f}MB, VMS: {mem_info.vms / 1024 / 1024:.2f}MB")
+
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024 / 1024
+        reserved = torch.cuda.memory_reserved() / 1024 / 1024
+        logger.info(f"GPU Memory - Allocated: {allocated:.2f}MB, Reserved: {reserved:.2f}MB")
+
 class ImageGenerator:
     def __init__(self):
-        self.model = None
+        self.model: Optional[torch.nn.Module] = None
         # Force CPU if USE_GPU is false
         if not USE_GPU:
             self.device = "cpu"
@@ -118,9 +134,35 @@ class ImageGenerator:
             logger.error(f"Error loading model: {str(e)}")
             raise
 
+    def cleanup(self):
+        """Clean up resources and free memory"""
+        if self.model is not None:
+            try:
+                # Move model to CPU before deletion
+                if hasattr(self.model, 'to'):
+                    self.model.to('cpu')
+
+                # Delete model and clear CUDA cache
+                del self.model
+                self.model = None
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                # Force garbage collection
+                gc.collect()
+
+                logger.info("Model cleanup completed")
+                log_memory_usage()
+            except Exception as e:
+                logger.error(f"Error during cleanup: {str(e)}")
+
     def generate(self, prompt=None):
         if prompt is None:
             prompt = PROMPT
+
+        # Log memory usage before generation
+        log_memory_usage()
 
         try:
             logger.info("Starting image generation")
@@ -148,16 +190,21 @@ class ImageGenerator:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"output/image_{timestamp}_{str(uuid.uuid4())[:8]}.png"
 
-            # Save image
+            # Save image and cleanup
             image.save(filename)
+            del image  # Explicitly delete the image
             logger.info(f"Image saved successfully: {filename}")
+
+            # Log memory usage after generation
+            log_memory_usage()
             return filename
         except Exception as e:
             logger.error(f"Error generating image: {str(e)}")
             raise
 
-# Initialize generator
+# Initialize generator with memory monitoring
 generator = ImageGenerator()
+log_memory_usage()
 
 @app.get("/")
 async def root():
@@ -169,7 +216,15 @@ async def generate_image(custom_prompt: str = None):
         filename = generator.generate(custom_prompt)
         return {"message": "Image generated successfully", "filename": filename}
     except Exception as e:
+        # Attempt cleanup on error
+        generator.cleanup()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup resources on application shutdown"""
+    logger.info("Shutting down application, cleaning up resources...")
+    generator.cleanup()
 
 if __name__ == "__main__":
     import uvicorn

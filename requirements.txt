@@ -11,3 +11,4 @@ pillow>=10.2.0
 omegaconf>=2.3.0
 sentencepiece>=0.1.99
 beautifulsoup4>=4.12.3
+psutil>=5.9.8  # For memory monitoring
