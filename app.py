@@ -83,21 +83,40 @@ class ImageGenerator:
         try:
             logger.info(f"Loading {MODEL_TYPE} model: {MODEL_ID}")
 
-            # Determine model type and configuration
-            if MODEL_TYPE == "PixArt-alpha":
-                model_class = PixArtAlphaPipeline
-            elif "Hyper-SD" in MODEL_ID:
-                model_class = AutoPipelineForText2Image
-            else:
-                model_class = (
-                    StableDiffusionXLPipeline if MODEL_TYPE == "stable-diffusion-xl"
-                    else StableDiffusionPipeline
-                )
-
             # Prepare model loading parameters
             model_params = {
                 "use_safetensors": True
             }
+
+            # Determine model type and configuration
+            if MODEL_TYPE == "PixArt-alpha":
+                model_class = PixArtAlphaPipeline
+                # Force these settings for PixArt-LCM
+                model_params["torch_dtype"] = torch.float16
+                model_params["safety_checker"] = None
+                model_params["requires_safety_checker"] = False
+                model_params["use_safetensors"] = True
+                if "LCM" in MODEL_ID:
+                    logger.info("Detected LCM model variant, optimizing settings")
+                    # Additional LCM-specific settings
+                    model_params["low_cpu_mem_usage"] = True
+                    if self.device == "cuda":
+                        model_params["variant"] = "fp16"
+            elif MODEL_TYPE == "stable-diffusion-xl":
+                model_class = StableDiffusionXLPipeline
+                # SDXL specific optimizations
+                if "turbo" in MODEL_ID.lower():
+                    logger.info("Detected SDXL Turbo, optimizing settings")
+                    model_params["variant"] = "fp16"
+                    model_params["torch_dtype"] = torch.float16
+                else:
+                    logger.info("Loading SDXL base model")
+                    # Enable VAE slicing for SDXL base model
+                    model_params["vae_tiling"] = True
+            elif "Hyper-SD" in MODEL_ID:
+                model_class = AutoPipelineForText2Image
+            else:
+                model_class = StableDiffusionPipeline
 
             # Configure device-specific parameters
             if self.device == "cuda":
@@ -129,8 +148,12 @@ class ImageGenerator:
                 logger.info("Enabling model CPU offload")
 
             if ENABLE_SEQUENTIAL_CPU_OFFLOAD:
-                model_params["device_map"] = "auto"
-                logger.info("Enabling sequential CPU offload")
+                if MODEL_TYPE == "PixArt-alpha":
+                    model_params["device_map"] = "balanced"
+                    logger.info("Enabling balanced CPU offload for PixArt")
+                else:
+                    model_params["device_map"] = "auto"
+                    logger.info("Enabling sequential CPU offload")
 
             local_model_path = f"/app/models/{MODEL_TYPE}/{MODEL_ID.split('/')[-1]}"
 
@@ -139,8 +162,7 @@ class ImageGenerator:
                 # Load from local cache
                 self.model = model_class.from_pretrained(
                     local_model_path,
-                    **model_params,
-                    low_cpu_mem_usage=True
+                    **model_params
                 ).to(self.device)
             else:
                 # Download and save to local cache
@@ -153,8 +175,7 @@ class ImageGenerator:
 
                 self.model = model_class.from_pretrained(
                     MODEL_ID,
-                    **model_params,
-                    low_cpu_mem_usage=True
+                    **model_params
                 ).to(self.device)
 
                 # Save the model to local cache
@@ -171,6 +192,10 @@ class ImageGenerator:
                     self.model.enable_attention_slicing()
                     logger.info("Enabled attention slicing for GPU")
                 try:
+                    if MODEL_TYPE == "stable-diffusion-xl" and "turbo" not in MODEL_ID.lower():
+                        # SDXL base model specific optimizations
+                        self.model.enable_vae_tiling()
+                        logger.info("Enabled VAE tiling for SDXL")
                     self.model.enable_model_cpu_offload()
                     logger.info("Enabled CPU offload for GPU optimization")
                 except Exception as e:
