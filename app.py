@@ -6,6 +6,8 @@ import torch
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionXLPipeline,
+    AutoPipelineForText2Image,
+    PixArtAlphaPipeline,
 )
 from PIL import Image
 import uuid
@@ -25,6 +27,7 @@ NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS", 50))
 HEIGHT = int(os.getenv("HEIGHT", 512))
 WIDTH = int(os.getenv("WIDTH", 512))
 PROMPT = os.getenv("PROMPT", "")
+VARIANT = os.getenv("VARIANT", None)  # Optional variant parameter
 
 # GPU configuration
 USE_GPU = bool(strtobool(os.getenv("USE_GPU", "false")))
@@ -60,27 +63,36 @@ class ImageGenerator:
             logger.info(f"Loading {MODEL_TYPE} model: {MODEL_ID}")
 
             # Determine model type and configuration
-            model_class = (
-                StableDiffusionXLPipeline if MODEL_TYPE == "stable-diffusion-xl"
-                else StableDiffusionPipeline
-            )
+            if MODEL_TYPE == "PixArt-alpha":
+                model_class = PixArtAlphaPipeline
+            elif "Hyper-SD" in MODEL_ID:
+                model_class = AutoPipelineForText2Image
+            else:
+                model_class = (
+                    StableDiffusionXLPipeline if MODEL_TYPE == "stable-diffusion-xl"
+                    else StableDiffusionPipeline
+                )
+
+            # Prepare model loading parameters
+            model_params = {
+                "use_safetensors": True
+            }
+
+            # Configure device-specific parameters
+            if self.device == "cuda":
+                model_params["torch_dtype"] = torch.float16
+                if VARIANT:  # Only add variant if it's specified
+                    model_params["variant"] = VARIANT
+                logger.info(f"Loading model in GPU mode with FP16{' and variant ' + VARIANT if VARIANT else ''}")
+            else:
+                model_params["torch_dtype"] = torch.float32
+                logger.info("Loading model in CPU mode with FP32")
 
             # Load model with appropriate configuration
-            if self.device == "cuda":
-                self.model = model_class.from_pretrained(
-                    MODEL_ID,
-                    torch_dtype=torch.float16,
-                    variant="fp16",
-                    use_safetensors=True,
-                ).to(self.device)
-                logger.info("Loaded model in GPU mode with FP16")
-            else:
-                self.model = model_class.from_pretrained(
-                    MODEL_ID,
-                    torch_dtype=torch.float32,
-                    use_safetensors=True,
-                ).to(self.device)
-                logger.info("Loaded model in CPU mode with FP32")
+            self.model = model_class.from_pretrained(
+                MODEL_ID,
+                **model_params
+            ).to(self.device)
 
             # Apply optimizations based on device and model
             if self.device == "cuda":
