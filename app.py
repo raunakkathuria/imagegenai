@@ -7,12 +7,7 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import torch
 from typing import Optional
-from diffusers import (
-    StableDiffusionPipeline,
-    StableDiffusionXLPipeline,
-    AutoPipelineForText2Image,
-    PixArtAlphaPipeline,
-)
+from diffusers import AutoPipelineForText2Image
 from PIL import Image
 import uuid
 from datetime import datetime
@@ -31,7 +26,6 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Model configurations
-MODEL_TYPE = os.getenv("MODEL_TYPE", "stable-diffusion")
 MODEL_ID = os.getenv("MODEL_ID", "CompVis/stable-diffusion-v1-4")
 GUIDANCE_SCALE = float(os.getenv("GUIDANCE_SCALE", 7.5))
 NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS", 50))
@@ -85,144 +79,63 @@ class ImageGenerator:
 
     def load_model(self):
         try:
-            logger.info(f"Loading {MODEL_TYPE} model: {MODEL_ID}")
+            logger.info(f"Loading model: {MODEL_ID}")
 
-            # Prepare model loading parameters
+            # Configure model parameters
             model_params = {
                 "use_safetensors": True,
                 "low_cpu_mem_usage": True,
-                "device": self.device
+                "torch_dtype": torch.float16 if TORCH_DTYPE == "float16" else torch.float32,
+                "variant": VARIANT if VARIANT else None,
             }
 
-            # Configure device-specific parameters
-            if self.device == "cuda":
-                # Set torch dtype based on configuration
-                if TORCH_DTYPE == "float16":
-                    model_params["torch_dtype"] = torch.float16
-                    logger.info("Using FP16 precision")
-                else:
-                    model_params["torch_dtype"] = torch.float32
-                    logger.info("Using FP32 precision")
-
-                if VARIANT:  # Only add variant if it's specified
-                    model_params["variant"] = VARIANT
-
-                # Set maximum memory usage if specified
-                if MAX_MEMORY < 1.0:
-                    memory_in_gb = int(torch.cuda.get_device_properties(0).total_memory * MAX_MEMORY / 1024 / 1024 / 1024)
-                    max_memory = {0: f"{memory_in_gb}GB"}
-                    model_params["max_memory"] = max_memory
-                    logger.info(f"Setting max GPU memory to {memory_in_gb}GB")
-
-                logger.info(f"Loading model in GPU mode{' with variant ' + VARIANT if VARIANT else ''}")
-            else:
-                model_params["torch_dtype"] = torch.float32
-                logger.info("Loading model in CPU mode with FP32")
-
-            # Configure offload parameters
+            # Configure device and offload settings
             if ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD:
-                logger.info("Configuring CPU offload settings")
+                logger.info("Using automatic device mapping for CPU offload")
                 model_params["device_map"] = "auto"
-                model_params["offload_folder"] = "offload"
-                # Remove direct device setting when using device_map
-                model_params.pop("device", None)
-
-                # Set torch dtype explicitly for offloading
-                if TORCH_DTYPE == "float16":
-                    model_params["torch_dtype"] = torch.float16
-                    logger.info("Using FP16 precision with CPU offload")
-                else:
-                    model_params["torch_dtype"] = torch.float32
-                    logger.info("Using FP32 precision with CPU offload")
-
-                # Log offload configuration
-                logger.info("CPU offload enabled:")
-                logger.info(f"- Device mapping: {model_params['device_map']}")
-                logger.info(f"- Offload folder: {model_params['offload_folder']}")
                 logger.info("Note: Meta device warnings are normal when using CPU offload")
-
-            # Determine model type and configuration
-            if MODEL_TYPE == "PixArt-alpha":
-                model_class = PixArtAlphaPipeline
-                # PixArt model settings
-                if "LCM" in MODEL_ID:
-                    logger.info("Detected LCM model variant, optimizing settings")
-            elif MODEL_TYPE == "stable-diffusion-xl":
-                model_class = StableDiffusionXLPipeline
-                # SDXL specific optimizations
-                if "turbo" in MODEL_ID.lower():
-                    logger.info("Detected SDXL Turbo, optimizing settings")
-                    if TORCH_DTYPE == "float16":
-                        model_params["variant"] = "fp16"
-                else:
-                    logger.info("Loading SDXL base model")
-                    model_params["vae_tiling"] = True
-            elif "Hyper-SD" in MODEL_ID:
-                model_class = AutoPipelineForText2Image
             else:
-                model_class = StableDiffusionPipeline
+                model_params["device"] = self.device
 
-            # Use simpler path structure for bind mount
+            # Configure memory settings for GPU
+            if MAX_MEMORY < 1.0 and self.device == "cuda":
+                memory_in_gb = int(torch.cuda.get_device_properties(0).total_memory * MAX_MEMORY / 1024 / 1024 / 1024)
+                model_params["max_memory"] = {0: f"{memory_in_gb}GB"}
+                logger.info(f"Setting max GPU memory to {memory_in_gb}GB")
+
+            # Load model
             model_name = MODEL_ID.split('/')[-1].replace('/', '_')
             local_model_path = f"/app/models/{model_name}"
 
-            # Always load from HuggingFace for PixArt due to meta tensor issues
-            if MODEL_TYPE == "PixArt-alpha":
-                logger.info("Loading PixArt model directly from HuggingFace")
-                self.model = model_class.from_pretrained(
-                    MODEL_ID,
+            if os.path.exists(local_model_path):
+                logger.info(f"Loading model from local cache: {local_model_path}")
+                self.model = AutoPipelineForText2Image.from_pretrained(
+                    local_model_path,
                     **model_params
                 )
             else:
-                if os.path.exists(local_model_path):
-                    logger.info(f"Loading model from local cache: {local_model_path}")
-                    # Load from local cache
-                    self.model = model_class.from_pretrained(
-                        local_model_path,
-                        **model_params
-                    )
-                else:
-                    # Download and save to local cache
-                    logger.info("Model not found in cache. Starting download and pipeline loading:")
-                    logger.info("1. Loading tokenizer and text encoder")
-                    logger.info("2. Loading UNet for diffusion")
-                    logger.info("3. Loading VAE for image encoding/decoding")
-                    logger.info("4. Loading scheduler for inference steps")
-                    logger.info("5. Finalizing pipeline setup")
+                logger.info("Model not found in cache. Starting download and pipeline loading...")
+                self.model = AutoPipelineForText2Image.from_pretrained(
+                    MODEL_ID,
+                    **model_params
+                )
 
-                    self.model = model_class.from_pretrained(
-                        MODEL_ID,
-                        **model_params
-                    )
-
-                    # Save the model to local cache
-                    os.makedirs(local_model_path, exist_ok=True)
-                    logger.info(f"Saving model to local cache: {local_model_path}")
-                    self.model.save_pretrained(local_model_path)
+                # Save the model to local cache
+                os.makedirs(local_model_path, exist_ok=True)
+                logger.info(f"Saving model to local cache: {local_model_path}")
+                self.model.save_pretrained(local_model_path)
 
             logger.info("Pipeline components loaded successfully")
 
-            # Apply optimizations based on device and model
-            if self.device == "cuda":
-                # GPU-specific optimizations
+            # Apply optimizations if not using offload
+            if not (ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD):
                 if ENABLE_ATTENTION_SLICING:
                     self.model.enable_attention_slicing()
-                    logger.info("Enabled attention slicing for GPU")
-                try:
-                    if MODEL_TYPE == "stable-diffusion-xl" and "turbo" not in MODEL_ID.lower():
-                        # SDXL base model specific optimizations
-                        self.model.enable_vae_tiling()
-                        logger.info("Enabled VAE tiling for SDXL")
-                except Exception as e:
-                    logger.warning(f"Could not enable GPU optimizations: {str(e)}")
-            else:
-                # CPU-specific optimizations
-                if ENABLE_ATTENTION_SLICING:
-                    self.model.enable_attention_slicing()
-                    logger.info("Enabled attention slicing for CPU")
-                if MODEL_TYPE == "stable-diffusion-xl":
-                    self.model.enable_vae_slicing()
-                    logger.info("Enabled VAE slicing for SDXL on CPU")
+                    logger.info("Enabled attention slicing")
+
+                if hasattr(self.model, 'enable_vae_tiling'):
+                    self.model.enable_vae_tiling()
+                    logger.info("Enabled VAE tiling")
 
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
@@ -263,7 +176,7 @@ class ImageGenerator:
 
             # Generate image with memory management
             try:
-                # Different pipelines have different callback parameter names
+                # Configure callback for progress tracking
                 callback_params = {}
                 if hasattr(self.model, 'scheduler'):
                     logger.info("Setting up progress callback")
@@ -271,13 +184,8 @@ class ImageGenerator:
                     def callback_fn(step: int, _timestep: int, _latents: torch.FloatTensor) -> None:
                         logger.info(f"Generation progress: step {step + 1}/{NUM_INFERENCE_STEPS}")
 
-                    # Try different parameter names used by different pipelines
-                    if MODEL_TYPE == "PixArt-alpha":
-                        callback_params["callback_on_step_end"] = callback_fn
-                        callback_params["callback_on_step_end_tensor_inputs"] = ["latents"]
-                    else:
-                        callback_params["callback"] = callback_fn
-                        callback_params["callback_steps"] = 1
+                    callback_params["callback"] = callback_fn
+                    callback_params["callback_steps"] = 1
 
                 logger.info(f"Starting generation with {NUM_INFERENCE_STEPS} steps")
                 image = self.model(
