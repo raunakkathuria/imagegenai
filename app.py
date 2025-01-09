@@ -7,7 +7,12 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import torch
 from typing import Optional
-from diffusers import AutoPipelineForText2Image
+from diffusers import (
+    StableDiffusionPipeline,
+    StableDiffusionXLPipeline,
+    AutoPipelineForText2Image,
+    PixArtAlphaPipeline,
+)
 from PIL import Image
 import uuid
 from datetime import datetime
@@ -26,6 +31,7 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Model configurations
+MODEL_TYPE = os.getenv("MODEL_TYPE", "stable-diffusion")
 MODEL_ID = os.getenv("MODEL_ID", "CompVis/stable-diffusion-v1-4")
 GUIDANCE_SCALE = float(os.getenv("GUIDANCE_SCALE", 7.5))
 NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS", 50))
@@ -89,26 +95,27 @@ class ImageGenerator:
                 "variant": VARIANT if VARIANT else None,
             }
 
-            # Configure device and memory settings
-            if ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD:
-                logger.info("Using CPU offload configuration")
-                model_params.update({
-                    "device_map": "auto",
-                    "offload_folder": "/tmp/offload",
-                    "no_split_module_classes": ["Transformer", "CLIPTextModel", "CLIPVisionModel"]
-                })
-                os.makedirs("/tmp/offload", exist_ok=True)
-                logger.info(f"Using offload folder: {model_params['offload_folder']}")
-                logger.info("Note: Meta device warnings are normal when using CPU offload")
+            # Determine model class and configuration
+            if MODEL_TYPE == "PixArt-alpha":
+                model_class = PixArtAlphaPipeline
+                logger.info("Loading PixArt model")
+                # PixArt configuration
+                model_params = {
+                    "torch_dtype": torch.float16 if TORCH_DTYPE == "float16" else torch.float32,
+                    "use_safetensors": True
+                }
+                if self.device == "cuda":
+                    # For PixArt, we handle GPU placement after loading
+                    logger.info("Will move PixArt model to GPU after loading")
+            elif MODEL_TYPE == "stable-diffusion-xl":
+                model_class = StableDiffusionXLPipeline
+                logger.info("Loading SDXL model")
+                if "turbo" in MODEL_ID.lower():
+                    logger.info("Detected SDXL Turbo variant")
             else:
-                model_params["device"] = self.device
-                logger.info(f"Using device: {self.device}")
-
-            # Configure GPU memory settings
-            if self.device == "cuda" and MAX_MEMORY < 1.0:
-                memory_in_gb = int(torch.cuda.get_device_properties(0).total_memory * MAX_MEMORY / 1024 / 1024 / 1024)
-                model_params["max_memory"] = {0: f"{memory_in_gb}GB"}
-                logger.info(f"Setting max GPU memory to {memory_in_gb}GB")
+                # Use AutoPipeline as a fallback for better compatibility
+                logger.info("Using AutoPipeline for model loading")
+                model_class = AutoPipelineForText2Image
 
             # Load model
             model_name = MODEL_ID.split('/')[-1].replace('/', '_')
@@ -116,13 +123,13 @@ class ImageGenerator:
 
             if os.path.exists(local_model_path):
                 logger.info(f"Loading model from local cache: {local_model_path}")
-                self.model = AutoPipelineForText2Image.from_pretrained(
+                self.model = model_class.from_pretrained(
                     local_model_path,
                     **model_params
                 )
             else:
                 logger.info("Model not found in cache. Starting download and pipeline loading...")
-                self.model = AutoPipelineForText2Image.from_pretrained(
+                self.model = model_class.from_pretrained(
                     MODEL_ID,
                     **model_params
                 )
@@ -133,6 +140,14 @@ class ImageGenerator:
                 self.model.save_pretrained(local_model_path)
 
             logger.info("Pipeline components loaded successfully")
+
+            # Move PixArt model to GPU if needed
+            if MODEL_TYPE == "PixArt-alpha" and self.device == "cuda":
+                logger.info("Moving PixArt model to GPU")
+                self.model.to("cuda")
+                # For PixArt, we verify GPU placement through the unet
+                if hasattr(self.model, 'unet') and hasattr(self.model.unet, 'device'):
+                    logger.info(f"Model device: {self.model.unet.device}")
 
             # Apply optimizations if not using offload
             if not (ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD):
