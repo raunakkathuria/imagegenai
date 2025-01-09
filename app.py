@@ -141,13 +141,18 @@ class ImageGenerator:
 
             logger.info("Pipeline components loaded successfully")
 
-            # Move PixArt model to GPU if needed
-            if MODEL_TYPE == "PixArt-alpha" and self.device == "cuda":
-                logger.info("Moving PixArt model to GPU")
+            # Move model to GPU if needed
+            if self.device == "cuda" and not (ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD):
+                logger.info(f"Moving {MODEL_TYPE} model to GPU")
                 self.model.to("cuda")
-                # For PixArt, we verify GPU placement through the unet
+                # Verify GPU placement through the unet
                 if hasattr(self.model, 'unet') and hasattr(self.model.unet, 'device'):
                     logger.info(f"Model device: {self.model.unet.device}")
+                # Log GPU memory after model movement
+                if torch.cuda.is_available():
+                    allocated = torch.cuda.memory_allocated() / 1024 / 1024
+                    reserved = torch.cuda.memory_reserved() / 1024 / 1024
+                    logger.info(f"GPU Memory after model loading - Allocated: {allocated:.2f}MB, Reserved: {reserved:.2f}MB")
 
             # Apply optimizations if not using offload
             if not (ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD):

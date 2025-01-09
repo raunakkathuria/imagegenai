@@ -44,9 +44,9 @@ cp .env.pixart .env
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 Features:
-- Resolution: 512x512
-- LCM for fast inference
-- No guidance needed
+- Resolution: 768x768 (optimized for mobile/web)
+- LCM variant for faster inference
+- Configurable precision (float16/float32)
 - Best for artistic images
 - Excellent style consistency
 
@@ -96,11 +96,11 @@ chmod 777 cache models output  # Ensure Docker has write permissions
 ### Memory Management
 
 Each model configuration includes optimized memory settings:
-- GPU Memory Usage: 60% (configurable via MAX_MEMORY)
-- Attention Slicing enabled
-- VAE Tiling where supported
-- CPU Offloading when needed
-- Memory-efficient attention
+- GPU Memory Usage: Configurable via MAX_MEMORY (60-80%)
+- Attention Slicing enabled for all models
+- VAE Tiling for SDXL high-res images
+- Configurable precision (float16/float32)
+- Automatic device placement
 
 ### Memory Optimization Features:
 1. Dynamic Memory Allocation
@@ -217,9 +217,10 @@ Advanced settings:
    - Perfect for rapid prototyping
    - Good quality-speed balance
 3. PixArt-α LCM:
-   - Uses float32 precision for stability
+   - Configurable precision (float16/float32)
    - No guidance needed (scale=0.0)
-   - Fast inference with LCM
+   - Fast inference with LCM variant
+   - 768x768 resolution for optimal quality
    - Excellent for artistic styles
 
 ## Requirements
