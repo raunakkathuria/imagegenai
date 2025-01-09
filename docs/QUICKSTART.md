@@ -35,8 +35,12 @@ git clone <repository-url>
 cd imagegen
 ```
 
-2. Create required directories with proper permissions:
+2. Setup directories and clean cache:
 ```bash
+# Remove old cache if exists (important when changing configurations)
+rm -rf cache models
+
+# Create fresh directories with proper permissions
 mkdir -p cache models output
 chmod 777 cache models output  # Ensure Docker has write permissions
 ```
@@ -53,12 +57,12 @@ cp .env.sdxl-turbo .env
 cp .env.pixart .env
 ```
 
-3. Start the service:
+4. Start the service:
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-4. Generate an image:
+5. Generate an image:
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
@@ -135,18 +139,19 @@ The service uses local directories for caching models and Hugging Face files:
 ./output - Generated images
 ```
 
-To manage disk space:
-1. Clean unused models:
+Important: When changing model configurations or updating the code, clean the cache:
 ```bash
-# Remove specific model cache
-rm -rf ./models/stable-diffusion-xl/
-rm -rf ./cache/models--stabilityai--stable-diffusion-xl-base-1.0/
+# Stop containers first
+docker compose down
 
-# Clean all caches (will re-download on next use)
-rm -rf ./cache/* ./models/*
+# Clean cache directories
+rm -rf cache/* models/*
+
+# Rebuild and start
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-2. Monitor disk usage:
+Monitor disk usage:
 ```bash
 # Check cache sizes
 du -sh ./cache ./models ./output
@@ -155,11 +160,11 @@ du -sh ./cache ./models ./output
 watch -n 10 'du -sh ./cache ./models ./output'
 ```
 
-3. Best practices:
-   - Regularly clean temporary files
-   - Keep only needed models
-   - Archive old outputs
-   - Monitor disk space usage
+Best practices:
+- Clean cache when switching models
+- Keep only needed models
+- Archive old outputs
+- Monitor disk space usage
 
 ### Memory Management
 
@@ -194,6 +199,12 @@ WORKERS=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
    - Reduce inference steps
    - Consider SDXL Turbo
    - Optimize prompt length
+
+3. Model Loading Issues:
+   - Clean cache directories
+   - Rebuild containers
+   - Check error logs
+   - Verify configurations
 
 ## API Usage
 
@@ -242,7 +253,7 @@ curl http://localhost:8080/
 ## Troubleshooting
 
 1. Model Loading Issues:
-   - Check GPU memory
+   - Clean cache directories
    - Verify CUDA setup
    - Check model cache
    - Review logs carefully
