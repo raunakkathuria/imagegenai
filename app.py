@@ -81,7 +81,7 @@ class ImageGenerator:
         try:
             logger.info(f"Loading model: {MODEL_ID}")
 
-            # Configure model parameters
+            # Configure base parameters
             model_params = {
                 "use_safetensors": True,
                 "low_cpu_mem_usage": True,
@@ -89,16 +89,23 @@ class ImageGenerator:
                 "variant": VARIANT if VARIANT else None,
             }
 
-            # Configure device and offload settings
+            # Configure device and memory settings
             if ENABLE_MODEL_CPU_OFFLOAD or ENABLE_SEQUENTIAL_CPU_OFFLOAD:
-                logger.info("Using automatic device mapping for CPU offload")
-                model_params["device_map"] = "auto"
+                logger.info("Using CPU offload configuration")
+                model_params.update({
+                    "device_map": "auto",
+                    "offload_folder": "/tmp/offload",
+                    "no_split_module_classes": ["Transformer", "CLIPTextModel", "CLIPVisionModel"]
+                })
+                os.makedirs("/tmp/offload", exist_ok=True)
+                logger.info(f"Using offload folder: {model_params['offload_folder']}")
                 logger.info("Note: Meta device warnings are normal when using CPU offload")
             else:
                 model_params["device"] = self.device
+                logger.info(f"Using device: {self.device}")
 
-            # Configure memory settings for GPU
-            if MAX_MEMORY < 1.0 and self.device == "cuda":
+            # Configure GPU memory settings
+            if self.device == "cuda" and MAX_MEMORY < 1.0:
                 memory_in_gb = int(torch.cuda.get_device_properties(0).total_memory * MAX_MEMORY / 1024 / 1024 / 1024)
                 model_params["max_memory"] = {0: f"{memory_in_gb}GB"}
                 logger.info(f"Setting max GPU memory to {memory_in_gb}GB")

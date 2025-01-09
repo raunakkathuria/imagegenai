@@ -1,5 +1,4 @@
 FROM python:3.11-slim
-
 WORKDIR /app
 
 # Install system dependencies
@@ -12,12 +11,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-RUN mkdir -p output cache models && \
-    chmod 777 output cache models
+# Create only output directory (since others will be volume mounted)
+RUN mkdir -p output && chmod 777 output
 
 # Copy application code
 COPY . .
 
 EXPOSE 8080
-
 CMD ["python3", "app.py"]
