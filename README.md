@@ -77,7 +77,23 @@ Response:
 }
 ```
 
-## Memory Management
+## Resource Management
+
+### Directory Structure
+```
+./cache   - HuggingFace cache (~22GB for full downloads)
+./models  - Model cache (saved model files)
+./output  - Generated images
+```
+
+### Initial Setup
+```bash
+# Create required directories with proper permissions
+mkdir -p cache models output
+chmod 777 cache models output  # Ensure Docker has write permissions
+```
+
+### Memory Management
 
 Each model configuration includes optimized memory settings:
 - GPU Memory Usage: 60% (configurable via MAX_MEMORY)
@@ -90,6 +106,7 @@ Each model configuration includes optimized memory settings:
 1. Dynamic Memory Allocation
    - Automatic GPU memory management
    - Efficient CPU offloading when needed
+   - Proper meta device handling
 
 2. Memory Efficiency Options:
    - Attention slicing for reduced memory footprint
@@ -101,6 +118,56 @@ Each model configuration includes optimized memory settings:
    - Automatic cache clearing
    - Proper resource deallocation
    - Garbage collection optimization
+
+### Disk Space Management
+
+1. Cache Cleanup:
+```bash
+# Remove specific model cache
+rm -rf ./models/stable-diffusion-xl-base-1.0
+rm -rf ./cache/models--stabilityai--stable-diffusion-xl-base-1.0
+
+# Clean all caches (will re-download on next use)
+rm -rf ./cache/* ./models/*
+```
+
+2. Monitor Usage:
+```bash
+# Check cache sizes
+du -sh ./cache ./models ./output
+
+# Monitor during usage
+watch -n 10 'du -sh ./cache ./models ./output'
+```
+
+Or use the following cleanup script
+
+```
+#!/bin/bash
+
+echo "Warning: This will delete all cached models and require re-downloading"
+read -p "Are you sure you want to continue? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    # Stop containers
+    docker-compose down
+    
+    # Cleanup
+    rm -rf ./cache/* ./models/*
+    
+    # Restart
+    docker-compose up -d
+    
+    echo "Cleanup completed. First image generation will require model download."
+fi
+```
+
+3. Best Practices:
+   - Regularly clean temporary files
+   - Keep only needed models
+   - Archive old outputs
+   - Monitor disk space usage
 
 ## Performance Tips
 
