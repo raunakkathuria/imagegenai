@@ -276,14 +276,14 @@ class GenerateRequest(BaseModel):
     negative_prompt: str | None = None
 
 @app.post("/generate")
-async def generate_image(request: GenerateRequest):
+async def generate_image(request: GenerateRequest | None = None):
     try:
         if not generator:
             raise HTTPException(status_code=503, detail="Generator not initialized")
 
         # Use custom prompts if provided, otherwise fall back to environment variables
-        prompt = request.custom_prompt if request.custom_prompt is not None else PROMPT
-        negative = request.negative_prompt if request.negative_prompt is not None else NEGATIVE_PROMPT
+        prompt = request.custom_prompt if request and request.custom_prompt is not None else PROMPT
+        negative = request.negative_prompt if request and request.negative_prompt is not None else NEGATIVE_PROMPT
 
         logger.info(f"Using prompt: {prompt}")
         logger.info(f"Using negative prompt: {negative}")

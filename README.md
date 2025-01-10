@@ -8,7 +8,21 @@ ImageGen provides a unified interface for generating images using various AI mod
 
 ## Supported Models
 
-### 1. SDXL (Stable Diffusion XL)
+### 1. CPU Mode (Stable Diffusion v1.5)
+- Optimized for CPU-only environments
+- Configuration: `.env.cpu`
+```bash
+cp .env.cpu .env
+docker compose -f docker-compose.yml up --build  # Note: No GPU compose file
+```
+Features:
+- Resolution: 512x512
+- Uses runwayml/stable-diffusion-v1-5
+- CPU optimizations enabled
+- Lower memory footprint
+- Good for systems without GPU
+
+### 2. SDXL (Stable Diffusion XL)
 - High-quality image generation
 - Configuration: `.env.sdxl`
 ```bash
@@ -22,7 +36,7 @@ Features:
 - Excellent for photorealistic outputs
 - Enhanced image quality
 
-### 2. SDXL Turbo
+### 3. SDXL Turbo
 - Fast image generation
 - Configuration: `.env.sdxl-turbo`
 ```bash
@@ -36,7 +50,7 @@ Features:
 - Good for real-time applications
 - Optimized for speed
 
-### 3. PixArt-α LCM
+### 4. PixArt-α LCM
 - Fast, high-quality generation
 - Configuration: `.env.pixart`
 ```bash
@@ -64,9 +78,14 @@ Features:
 
 ### Generate Image
 
-The API supports both custom prompts and negative prompts. You can provide either or both in your request:
+The API supports both custom prompts and negative prompts, with flexible request options:
 
-1. Basic usage (custom prompt only):
+1. Using environment defaults (no request body needed):
+```bash
+curl -X POST "http://localhost:8080/generate"
+```
+
+2. Custom prompt only:
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
@@ -94,9 +113,11 @@ Response:
 ```
 
 Notes:
+- All parameters are optional
+- If no request body is provided, uses environment defaults
 - If `custom_prompt` is not provided, uses `PROMPT` from environment
 - If `negative_prompt` is not provided, uses `NEGATIVE_PROMPT` from environment
-- Both prompts are optional and will fall back to environment values
+- Mix and match: provide either prompt, both, or none
 
 ## Resource Management
 
@@ -192,7 +213,18 @@ fi
 
 ## Performance Tips
 
-1. Single Worker Mode (Recommended for most cases):
+1. CPU vs GPU Mode:
+```bash
+# For CPU-only mode (using Stable Diffusion v1.5)
+cp .env.cpu .env
+docker compose -f docker-compose.yml up --build
+
+# For GPU mode (SDXL, SDXL Turbo, or PixArt)
+cp .env.[model] .env  # where [model] is sdxl, sdxl-turbo, or pixart
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+2. Single Worker Mode (Recommended for most cases):
 ```bash
 WORKERS=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ```
@@ -227,22 +259,33 @@ Advanced settings:
 
 ## Model-Specific Notes
 
-1. SDXL:
+1. CPU Mode (SD v1.5):
+   - Optimized for systems without GPU
+   - Uses CPU offloading for memory efficiency
+   - Good balance of quality and speed
+   - Works on any system
+
+2. SDXL:
    - Uses VAE Tiling for high-res images
    - Best with higher inference steps (30-50)
    - Excellent for detailed compositions
    - Supports high-resolution outputs
-2. SDXL Turbo:
+   - Requires GPU
+
+3. SDXL Turbo:
    - Optimized for speed (4-8 steps)
    - Works well with low inference steps
    - Perfect for rapid prototyping
    - Good quality-speed balance
-3. PixArt-α LCM:
+   - Requires GPU
+
+4. PixArt-α LCM:
    - Configurable precision (float16/float32)
    - No guidance needed (scale=0.0)
    - Fast inference with LCM variant
    - 768x768 resolution for optimal quality
    - Excellent for artistic styles
+   - Requires GPU
 
 ## Requirements
 
@@ -262,7 +305,7 @@ The application is fully dockerized with:
 - Volume mounting for persistent storage
 - Environment-based configuration
 
-### NVIDIA Setup
+### NVIDIA Setup (Required for GPU Models Only)
 
 1. Install NVIDIA Driver:
 ```bash
