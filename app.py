@@ -187,9 +187,11 @@ class ImageGenerator:
             except Exception as e:
                 logger.error(f"Error during cleanup: {str(e)}")
 
-    def generate(self, prompt=None):
+    def generate(self, prompt=None, negative_prompt=None):
         if prompt is None:
             prompt = PROMPT
+        if negative_prompt is None:
+            negative_prompt = NEGATIVE_PROMPT
 
         # Log memory usage before generation
         log_memory_usage()
@@ -217,7 +219,7 @@ class ImageGenerator:
                 logger.info(f"Starting generation with {NUM_INFERENCE_STEPS} steps")
                 image = self.model(
                     prompt=prompt,
-                    negative_prompt=NEGATIVE_PROMPT,
+                    negative_prompt=negative_prompt,
                     guidance_scale=GUIDANCE_SCALE,
                     num_inference_steps=NUM_INFERENCE_STEPS,
                     height=HEIGHT,
@@ -267,12 +269,26 @@ app = FastAPI(lifespan=lifespan)
 async def root():
     return {"message": "Image Generation API is running"}
 
+from pydantic import BaseModel
+
+class GenerateRequest(BaseModel):
+    custom_prompt: str | None = None
+    negative_prompt: str | None = None
+
 @app.post("/generate")
-async def generate_image(custom_prompt: str = None):
+async def generate_image(request: GenerateRequest):
     try:
         if not generator:
             raise HTTPException(status_code=503, detail="Generator not initialized")
-        filename = generator.generate(custom_prompt)
+
+        # Use custom prompts if provided, otherwise fall back to environment variables
+        prompt = request.custom_prompt if request.custom_prompt is not None else PROMPT
+        negative = request.negative_prompt if request.negative_prompt is not None else NEGATIVE_PROMPT
+
+        logger.info(f"Using prompt: {prompt}")
+        logger.info(f"Using negative prompt: {negative}")
+
+        filename = generator.generate(prompt, negative)
         return {"message": "Image generated successfully", "filename": filename}
     except Exception as e:
         # Attempt cleanup on error

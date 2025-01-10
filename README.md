@@ -63,10 +63,26 @@ Features:
 ## API Usage
 
 ### Generate Image
+
+The API supports both custom prompts and negative prompts. You can provide either or both in your request:
+
+1. Basic usage (custom prompt only):
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "your prompt here"}'
+  -d '{
+    "custom_prompt": "your prompt here"
+  }'
+```
+
+2. With custom negative prompt:
+```bash
+curl -X POST "http://localhost:8080/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "your prompt here",
+    "negative_prompt": "things to avoid in the image"
+  }'
 ```
 
 Response:
@@ -76,6 +92,11 @@ Response:
   "filename": "output/image_20240227_123456_abcd1234.png"
 }
 ```
+
+Notes:
+- If `custom_prompt` is not provided, uses `PROMPT` from environment
+- If `negative_prompt` is not provided, uses `NEGATIVE_PROMPT` from environment
+- Both prompts are optional and will fall back to environment values
 
 ## Resource Management
 
