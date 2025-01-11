@@ -1,10 +1,10 @@
-# ImageGen
+# ImageGenAI
 
 A flexible, containerized API server for image generation that supports multiple AI models with seamless CPU/GPU switching.
 
 ## Overview
 
-ImageGen provides a unified interface for generating images using various AI models. Built for flexibility, it supports both CPU and GPU environments, making it suitable for any deployment scenario from development to production.
+ImageGenAI provides a unified interface for generating images using various AI models. Built for flexibility, it supports both CPU and GPU environments, making it suitable for any deployment scenario from development to production.
 
 ## Supported Models
 

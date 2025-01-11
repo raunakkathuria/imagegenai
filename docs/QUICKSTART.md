@@ -1,15 +1,16 @@
-# ImageGen Quickstart Guide
+# ImageGenAI Quickstart Guide
 
-This guide will help you get started with the ImageGen API, a flexible service that supports multiple AI image generation models.
+This guide will help you get started with the ImageGenAI API, a flexible service that supports multiple AI image generation models.
 
 ## Prerequisites
 
 1. System Requirements:
-   - NVIDIA GPU with CUDA support
    - Docker and Docker Compose
-   - NVIDIA Container Toolkit
+   - For GPU models:
+     * NVIDIA GPU with CUDA support
+     * NVIDIA Container Toolkit
 
-2. NVIDIA Setup (Ubuntu/Debian):
+2. NVIDIA Setup (Ubuntu/Debian) - Required only for GPU models:
 ```bash
 # Install NVIDIA Driver
 sudo apt update
@@ -32,7 +33,7 @@ sudo systemctl restart docker
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd imagegen
+cd ImageGenAI
 ```
 
 2. Setup directories and clean cache:
@@ -47,45 +48,82 @@ chmod 777 cache models output  # Ensure Docker has write permissions
 
 3. Choose a model configuration:
 ```bash
-# For SDXL base model
+# For CPU-only mode (no GPU required)
+cp .env.cpu .env
+docker compose -f docker-compose.yml up --build
+
+# For GPU models:
+# SDXL base model
 cp .env.sdxl .env
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
-# For SDXL Turbo (faster)
+# SDXL Turbo (faster)
 cp .env.sdxl-turbo .env
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
-# For PixArt-α LCM
+# PixArt-α LCM
 cp .env.pixart .env
-```
-
-4. Start the service:
-```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-5. Generate an image:
+4. Generate images:
+
+Basic usage:
+```bash
+# Using environment defaults
+curl -X POST "http://localhost:8080/generate"
+
+# With custom prompt
+curl -X POST "http://localhost:8080/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "your prompt here"
+  }'
+```
+
+Advanced usage with runtime parameters:
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
-  -d '{"custom_prompt": "your prompt here"}'
+  -d '{
+    "custom_prompt": "your prompt here",
+    "negative_prompt": "things to avoid",
+    "num_inference_steps": 30,
+    "guidance_scale": 7.5,
+    "height": 768,
+    "width": 768
+  }'
 ```
+
+Parameter ranges:
+- num_inference_steps: 1-150 steps
+- guidance_scale: 0.0-20.0
+- height/width: 128-1024 (must be multiple of 8)
 
 ## Supported Models
 
-### 1. SDXL (Stable Diffusion XL)
+### 1. CPU Mode (Stable Diffusion v1.5)
+- Best for: Systems without GPU
+- Resolution: 512x512
+- Configuration: `.env.cpu`
+- Use case: Development and testing
+- Model: runwayml/stable-diffusion-v1-5
+
+### 2. SDXL (Stable Diffusion XL)
 - Best for: High-quality, detailed images
 - Resolution: 1024x1024
 - Configuration: `.env.sdxl`
 - Use case: Professional quality images
 
-### 2. SDXL Turbo
+### 3. SDXL Turbo
 - Best for: Quick generations
 - Resolution: 512x512
 - Configuration: `.env.sdxl-turbo`
 - Use case: Rapid prototyping, real-time applications
 
-### 3. PixArt-α LCM
+### 4. PixArt-α LCM
 - Best for: Artistic images
-- Resolution: 512x512
+- Resolution: 768x768
 - Configuration: `.env.pixart`
 - Use case: Creative and artistic outputs
 
@@ -94,8 +132,8 @@ curl -X POST "http://localhost:8080/generate" \
 ### Common Settings
 
 ```env
-# GPU Settings
-USE_GPU=true
+# Device Settings
+USE_GPU=true  # Set false for CPU mode
 TORCH_DTYPE=float32  # or float16 for less memory usage
 
 # Memory Management
@@ -104,7 +142,7 @@ ENABLE_ATTENTION_SLICING=true
 ENABLE_VAE_TILING=true
 EMPTY_CACHE_BETWEEN_RUNS=true
 
-# Generation Parameters
+# Generation Parameters (can be overridden via API)
 HEIGHT=512  # Image height
 WIDTH=512   # Image width
 NUM_INFERENCE_STEPS=20  # More steps = more detail
@@ -113,18 +151,23 @@ GUIDANCE_SCALE=7.5     # Higher = more prompt adherence
 
 ### Model-Specific Tips
 
-1. SDXL Base:
+1. CPU Mode (SD v1.5):
+   - Use 15-20 inference steps
+   - Enable CPU offloading
+   - Good for testing and development
+
+2. SDXL Base:
    - Use higher inference steps (30-50)
    - Enable VAE tiling for high-res
    - Works well with detailed prompts
 
-2. SDXL Turbo:
+3. SDXL Turbo:
    - Use 4-8 inference steps
    - Good with float16 precision
    - Best for quick iterations
 
-3. PixArt-α LCM:
-   - Always use float32 precision
+4. PixArt-α LCM:
+   - Use float32 precision
    - No guidance needed (scale=0.0)
    - Great for artistic styles
 
@@ -148,7 +191,9 @@ docker compose down
 rm -rf cache/* models/*
 
 # Rebuild and start
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build  # For GPU models
+# or
+docker compose -f docker-compose.yml up --build  # For CPU mode
 ```
 
 Monitor disk usage:
@@ -168,7 +213,7 @@ Best practices:
 
 ### Memory Management
 
-#### GPU Memory Tips
+#### GPU Memory Tips (for GPU models)
 
 1. Single Worker Mode (Recommended):
 ```bash
@@ -193,6 +238,7 @@ WORKERS=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
    - Lower resolution
    - Enable memory optimizations
    - Use float16 precision (except PixArt)
+   - Consider CPU mode
 
 2. Slow Generation:
    - Check GPU utilization
@@ -209,11 +255,27 @@ WORKERS=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ## API Usage
 
 ### Generate Image
+
+Basic request:
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
   -d '{
     "custom_prompt": "A majestic mountain landscape at sunset, ultra detailed"
+  }'
+```
+
+Advanced request with parameters:
+```bash
+curl -X POST "http://localhost:8080/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "A majestic mountain landscape at sunset",
+    "negative_prompt": "blurry, low quality",
+    "num_inference_steps": 30,
+    "guidance_scale": 7.5,
+    "height": 768,
+    "width": 768
   }'
 ```
 
@@ -245,7 +307,7 @@ curl http://localhost:8080/
    - Regular cache cleanup
 
 3. Resource Management:
-   - Monitor GPU memory
+   - Monitor system resources
    - Use appropriate worker count
    - Regular maintenance
    - Proper shutdown handling
@@ -254,7 +316,7 @@ curl http://localhost:8080/
 
 1. Model Loading Issues:
    - Clean cache directories
-   - Verify CUDA setup
+   - Verify CUDA setup (for GPU)
    - Check model cache
    - Review logs carefully
 
@@ -265,7 +327,7 @@ curl http://localhost:8080/
    - Review error messages
 
 3. Performance Issues:
-   - Monitor GPU usage
+   - Monitor resource usage
    - Check memory settings
    - Verify network speed
    - Review configuration
@@ -274,5 +336,5 @@ curl http://localhost:8080/
 
 - Check the logs: `docker compose logs`
 - Review error messages
-- Check GPU status: `nvidia-smi`
+- Check GPU status: `nvidia-smi` (for GPU mode)
 - Monitor memory usage
