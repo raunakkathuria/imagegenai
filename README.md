@@ -94,7 +94,7 @@ curl -X POST "http://localhost:8080/generate" \
   }'
 ```
 
-2. With custom negative prompt:
+3. With custom negative prompt:
 ```bash
 curl -X POST "http://localhost:8080/generate" \
   -H "Content-Type: application/json" \
@@ -103,6 +103,24 @@ curl -X POST "http://localhost:8080/generate" \
     "negative_prompt": "things to avoid in the image"
   }'
 ```
+
+4. Runtime parameter adjustment:
+```bash
+curl -X POST "http://localhost:8080/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "your prompt here",
+    "num_inference_steps": 30,
+    "guidance_scale": 7.5,
+    "height": 768,
+    "width": 768
+  }'
+```
+
+Parameter Ranges:
+- num_inference_steps: 1-150 steps
+- guidance_scale: 0.0-20.0
+- height/width: 128-1024 (must be multiple of 8)
 
 Response:
 ```json
@@ -115,9 +133,10 @@ Response:
 Notes:
 - All parameters are optional
 - If no request body is provided, uses environment defaults
-- If `custom_prompt` is not provided, uses `PROMPT` from environment
-- If `negative_prompt` is not provided, uses `NEGATIVE_PROMPT` from environment
-- Mix and match: provide either prompt, both, or none
+- Parameters can be adjusted at runtime without restarting
+- Mix and match any combination of parameters
+- Valid ranges enforced by API validation
+- Changes only affect current generation
 
 ## Resource Management
 

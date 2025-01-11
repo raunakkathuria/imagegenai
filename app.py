@@ -187,20 +187,31 @@ class ImageGenerator:
             except Exception as e:
                 logger.error(f"Error during cleanup: {str(e)}")
 
-    def generate(self, prompt=None, negative_prompt=None):
-        if prompt is None:
-            prompt = PROMPT
-        if negative_prompt is None:
-            negative_prompt = NEGATIVE_PROMPT
+    def generate(
+        self,
+        prompt=None,
+        negative_prompt=None,
+        num_inference_steps=None,
+        guidance_scale=None,
+        height=None,
+        width=None
+    ):
+        # Use provided values or fall back to environment variables
+        prompt = prompt if prompt is not None else PROMPT
+        negative_prompt = negative_prompt if negative_prompt is not None else NEGATIVE_PROMPT
+        steps = num_inference_steps if num_inference_steps is not None else NUM_INFERENCE_STEPS
+        guidance = guidance_scale if guidance_scale is not None else GUIDANCE_SCALE
+        img_height = height if height is not None else HEIGHT
+        img_width = width if width is not None else WIDTH
 
         # Log memory usage before generation
         log_memory_usage()
 
         try:
             logger.info("Starting image generation")
-            logger.info(f"Parameters: steps={NUM_INFERENCE_STEPS}, "
-                      f"guidance_scale={GUIDANCE_SCALE}, "
-                      f"dimensions={WIDTH}x{HEIGHT}")
+            logger.info(f"Parameters: steps={steps}, "
+                      f"guidance_scale={guidance}, "
+                      f"dimensions={img_width}x{img_height}")
             logger.info(f"Using device: {self.device}")
 
             # Generate image with memory management
@@ -211,19 +222,19 @@ class ImageGenerator:
                     logger.info("Setting up progress callback")
 
                     def callback_fn(step: int, _timestep: int, _latents: torch.FloatTensor) -> None:
-                        logger.info(f"Generation progress: step {step + 1}/{NUM_INFERENCE_STEPS}")
+                        logger.info(f"Generation progress: step {step + 1}/{steps}")
 
                     callback_params["callback"] = callback_fn
                     callback_params["callback_steps"] = 1
 
-                logger.info(f"Starting generation with {NUM_INFERENCE_STEPS} steps")
+                logger.info(f"Starting generation with {steps} steps")
                 image = self.model(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    guidance_scale=GUIDANCE_SCALE,
-                    num_inference_steps=NUM_INFERENCE_STEPS,
-                    height=HEIGHT,
-                    width=WIDTH,
+                    guidance_scale=guidance,
+                    num_inference_steps=steps,
+                    height=img_height,
+                    width=img_width,
                     **callback_params
                 ).images[0]
             finally:
@@ -269,11 +280,15 @@ app = FastAPI(lifespan=lifespan)
 async def root():
     return {"message": "Image Generation API is running"}
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class GenerateRequest(BaseModel):
     custom_prompt: str | None = None
     negative_prompt: str | None = None
+    num_inference_steps: int | None = Field(None, ge=1, le=150)
+    guidance_scale: float | None = Field(None, ge=0.0, le=20.0)
+    height: int | None = Field(None, ge=128, le=1024, multiple_of=8)
+    width: int | None = Field(None, ge=128, le=1024, multiple_of=8)
 
 @app.post("/generate")
 async def generate_image(request: GenerateRequest | None = None):
@@ -281,14 +296,28 @@ async def generate_image(request: GenerateRequest | None = None):
         if not generator:
             raise HTTPException(status_code=503, detail="Generator not initialized")
 
-        # Use custom prompts if provided, otherwise fall back to environment variables
+        # Use provided values or fall back to environment variables
         prompt = request.custom_prompt if request and request.custom_prompt is not None else PROMPT
         negative = request.negative_prompt if request and request.negative_prompt is not None else NEGATIVE_PROMPT
+        steps = request.num_inference_steps if request and request.num_inference_steps is not None else NUM_INFERENCE_STEPS
+        guidance = request.guidance_scale if request and request.guidance_scale is not None else GUIDANCE_SCALE
+        height = request.height if request and request.height is not None else HEIGHT
+        width = request.width if request and request.width is not None else WIDTH
 
         logger.info(f"Using prompt: {prompt}")
         logger.info(f"Using negative prompt: {negative}")
+        logger.info(f"Using steps: {steps}")
+        logger.info(f"Using guidance scale: {guidance}")
+        logger.info(f"Using dimensions: {width}x{height}")
 
-        filename = generator.generate(prompt, negative)
+        filename = generator.generate(
+            prompt=prompt,
+            negative_prompt=negative,
+            num_inference_steps=steps,
+            guidance_scale=guidance,
+            height=height,
+            width=width
+        )
         return {"message": "Image generated successfully", "filename": filename}
     except Exception as e:
         # Attempt cleanup on error
