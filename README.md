@@ -74,6 +74,28 @@ Features:
 - Resource cleanup
 - Environment-based configuration
 
+## Installation
+
+You can either use the stable release or clone the repository:
+
+### Option 1: Using Release
+
+Check the latest stable release from https://github.com/raunakkathuria/imagegenai/releases.
+Download and extract the releases for a specific version, example [v0.0.1 release](https://github.com/raunakkathuria/imagegenai/releases/tag/v0.0.1):
+
+```bash
+wget https://github.com/raunakkathuria/imagegenai/archive/refs/tags/v0.0.1.tar.gz
+tar xzf v0.0.1.tar.gz
+cd imagegenai-0.0.1
+```
+
+### Option 2: Using Git
+
+```bash
+git clone https://github.com/raunakkathuria/imagegenai.git
+cd imagegenai
+```
+
 ## API Usage
 
 ### Generate Image
@@ -145,7 +167,32 @@ Notes:
 ./cache   - HuggingFace cache (~22GB for full downloads)
 ./models  - Model cache (saved model files)
 ./output  - Generated images
+./assets  - Example images with parameter variations
 ```
+
+### Assets Organization
+
+The `assets/` folder contains example images generated with different parameters, organized by model:
+
+```
+assets/
+├── pixart/          - PixArt-α model results
+├── runwaymlsdv1.5/  - RunwayML v1.5 model results
+├── sdv1.4/          - Stable Diffusion v1.4 results
+├── sdxl/            - SDXL base model results
+└── sdxlturbo/       - SDXL Turbo model results
+```
+
+Image naming convention:
+```
+[model]-steps-[inference_steps]-guidance-[guidance_scale]-[dimension].png
+```
+Example: `pixart-steps-4-guidance-0-768-best.png`
+- Model: pixart
+- Inference steps: 4
+- Guidance scale: 0.0
+- Dimension: 768x768
+- Suffix 'best': Indicates optimal parameters for this model
 
 ### Initial Setup
 ```bash
@@ -201,35 +248,6 @@ du -sh ./cache ./models ./output
 watch -n 10 'du -sh ./cache ./models ./output'
 ```
 
-Or use the following cleanup script
-
-```
-#!/bin/bash
-
-echo "Warning: This will delete all cached models and require re-downloading"
-read -p "Are you sure you want to continue? (y/n) " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]
-then
-    # Stop containers
-    docker-compose down
-    
-    # Cleanup
-    rm -rf ./cache/* ./models/*
-    
-    # Restart
-    docker-compose up -d
-    
-    echo "Cleanup completed. First image generation will require model download."
-fi
-```
-
-3. Best Practices:
-   - Regularly clean temporary files
-   - Keep only needed models
-   - Archive old outputs
-   - Monitor disk space usage
-
 ## Performance Tips
 
 1. CPU vs GPU Mode:
@@ -248,12 +266,12 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 WORKERS=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ```
 
-2. Multiple Workers (For high-throughput scenarios):
+3. Multiple Workers (For high-throughput scenarios):
 ```bash
 WORKERS=2 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ```
 
-3. Optimization Guidelines:
+4. Optimization Guidelines:
    - Use appropriate resolution for each model
    - Adjust inference steps based on quality needs
    - Monitor GPU memory usage
@@ -373,7 +391,7 @@ The API includes robust error handling:
 ## Development
 
 ### Local Setup
-1. Clone the repository
+1. Choose installation method (release or git)
 2. Install dependencies
 3. Copy appropriate .env file
 4. Run with docker-compose

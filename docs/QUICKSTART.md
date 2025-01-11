@@ -28,12 +28,30 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
+
+
 ## Quick Start
 
-1. Clone the repository:
+1. Installation
+
+You can either use the stable release or clone the repository:
+
+`Option 1`: Using Releases
+
+Check the latest stable release from https://github.com/raunakkathuria/imagegenai/releases.
+Download and extract the releases for a specific version, example [v0.0.1 release](https://github.com/raunakkathuria/imagegenai/releases/tag/v0.0.1):
+
 ```bash
-git clone <repository-url>
-cd ImageGenAI
+wget https://github.com/raunakkathuria/imagegenai/archive/refs/tags/v0.0.1.tar.gz
+tar xzf v0.0.1.tar.gz
+cd imagegenai-0.0.1
+```
+
+`Option 2`: Using Git
+
+```bash
+git clone https://github.com/raunakkathuria/imagegenai.git
+cd imagegenai
 ```
 
 2. Setup directories and clean cache:
@@ -126,6 +144,37 @@ Parameter ranges:
 - Resolution: 768x768
 - Configuration: `.env.pixart`
 - Use case: Creative and artistic outputs
+
+## Example Images
+
+The project includes example images in the `assets/` folder, demonstrating different parameter combinations for each model:
+
+```
+assets/
+├── pixart/          - PixArt-α model results
+├── runwaymlsdv1.5/  - RunwayML v1.5 model results
+├── sdv1.4/          - Stable Diffusion v1.4 results
+├── sdxl/            - SDXL base model results
+└── sdxlturbo/       - SDXL Turbo model results
+```
+
+Images are named to indicate the exact parameters used:
+```
+[model]-steps-[inference_steps]-guidance-[guidance_scale]-[dimension].png
+```
+
+For example: `pixart-steps-4-guidance-0-768-best.png` means:
+- Model: PixArt-α
+- Inference steps: 4
+- Guidance scale: 0.0
+- Resolution: 768x768
+- Suffix 'best': These parameters produced optimal results
+
+These examples can help you:
+- Understand parameter impacts
+- Choose optimal settings
+- Compare model capabilities
+- Evaluate quality vs speed trade-offs
 
 ## Configuration Guide
 
